@@ -1,0 +1,48 @@
+name:                PL-typechecker
+version:             0.1.0.0
+github:              "githubuser/PL-typechecker"
+license:             BSD3
+author:              "Shuji Narazaki"
+maintainer:          "shuji.narazaki@gmail.com"
+copyright:           "2018 Shuji Narazaki"
+
+extra-source-files:
+- README.md
+- ChangeLog.md
+
+# Metadata used when publishing your package
+# synopsis:            Short description of your package
+# category:            Web
+
+# To avoid duplicated efforts in documentation and dealing with the
+# complications of embedding Haddock markup inside cabal files, it is
+# common to point users to the README.md file.
+description:         Please see the README on GitHub at <https://github.com/githubuser/PL-typechecker#readme>
+
+dependencies:
+- base >= 4.7 && < 5
+
+library:
+  source-dirs: src
+
+executables:
+  PL-typechecker-exe:
+    main:                Main.hs
+    source-dirs:         app
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - PL-typechecker
+
+tests:
+  PL-typechecker-test:
+    main:                Spec.hs
+    source-dirs:         test
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - PL-typechecker
