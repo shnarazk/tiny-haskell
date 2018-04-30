@@ -6,7 +6,7 @@
 -- https://github.com/sdiehl/write-you-a-haskell/blob/master/chapter7/poly/src/Infer.hs
 
 module Lib
-    ( someFunc
+    ( Expr(..)
     , runInfer
     , infer
     ) where
@@ -16,9 +16,6 @@ import Control.Monad
 import Control.Monad.State
 
 import Data.List
-
-someFunc :: IO ()
-someFunc = putStrLn "someFunc"
 
 type Name = String
 
@@ -108,8 +105,9 @@ newTypeVar = do i <- get
                 return $ TV ("(" ++ show j ++ ")")
 
 infer :: Expr -> Infer (Scheme, TypeEnv)
-infer (Ref (Var _))     = do e <- Forall [] . TVar <$> newTypeVar
-                             return (e, emptyEnv)
+infer (Ref (Var n))     = do t <- newTypeVar
+                             let e = Forall [t] (TVar t)
+                             return (e, [(n, t)])
 infer (Lit (LInt _))    = return (Forall [] typeInt, emptyEnv)
 infer (Lit (LBool _))   = return (Forall [] typeBool, emptyEnv)
 infer (Lit (LString _)) = return (Forall [] typeChar, emptyEnv)
@@ -120,17 +118,17 @@ infer (Op Add x y)      = do (tx, ex) <- infer x
                                then return (Forall [] typeInt, append ex ey)
                                else error (show (tx, ty))
 
-unifiable :: TypeEnv -> TypeEnv -> Maybe TypeEnv
-unifiable (VarMap a) (VarMap b)
+unifiable' :: TypeEnv -> TypeEnv -> Maybe TypeEnv
+unifiable' (VarMap a) (VarMap b)
   | null comVs = Just $ VarMap (a ++ b)
   | elem Nothing uniVM = Nothing
-  
     where
       varsA = map fst a
       varsB = map fst b
       comVs = intersect varsA varsB
       uniVM = map unify comVs
       compl s = [ a | a <- s, notElem (fst a) comVs ]
+      unify 
       uniMV name e1 e2 = case (s1, s2) of
         (Forall _ (TVar _), Forall _ (TVar _))                -> s1
         (Forall _ (TCon n1), Forall _ (TCon n2)) | n1 == n2   -> s1
@@ -145,8 +143,25 @@ unifiable (VarMap a) (VarMap b)
   
 x = runInfer (Op Add (Lit (LInt 3)) (Ref (Var "x")))
 
-supercede :: Scheme -> Scheme -> Maybe Scheme
-supercede s@(Forall tl1 t1) (Forall tl2 t2)
+{-
+e1 // v と e2 // v が unifiableならば
+e'の下で、vに関するs1, s2がunfiableならば
+(v, s') : e' を理由にこれらはunifiableである。
+-}
+unify :: TypeEnv -> TypeEnv -> Var -> Maybe TypeEnv
+unify e1 e2 v
+ | Just e' <- unifiable e1 e2 = case unifiable v s1 s2 e' of
+                                  Just s' -> Just $ (v, s': e')
+                                  _       -> Nothing
+ | otherwise = Nothing
+ where
+   unifiable :: Var -> Scheme -> Scheme -> Maybe Scheme
+   unifiable v s1 s2 = undefined
+
+{-
+unify :: TypeEnv -> TVar -> Scheme -> Scheme -> Maybe Scheme
+unify e t s@(Forall tl1 t1) (Forall tl2 t2) =
+
   | length tl1 /= length tl2 = Nothing
   | t1 == t2'                = Just s
   | Just merged <- merge t1 t2' = merged
@@ -160,7 +175,7 @@ injectTypeVar (TV s) d x@(TVar (TV t)) = if t == s then (TVar d) else x
 injectTypeVar s d (TList t) = TList $ injectTypeVar s d t
 injectTypeVar s d (TPair tl) = TPair $ map (injectTypeVar s d) tl
 injectTypeVar s d (TArr tl) = TArr $ map (injectTypeVar s d) tl
-
+-}
 
 {-
 
