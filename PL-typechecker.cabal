@@ -2,16 +2,16 @@
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: cec3c00501956b2af9f2fd6666aad9080dd1635443f90f7100598890fd982757
+-- hash: a92454de10aeec563cb076e3e52b1758dc720fda376a751d9397a1807056989e
 
 name:           PL-typechecker
 version:        0.1.0.0
 description:    Please see the README on GitHub at <https://github.com/githubuser/PL-typechecker#readme>
 homepage:       https://github.com/githubuser/PL-typechecker#readme
 bug-reports:    https://github.com/githubuser/PL-typechecker/issues
-author:         Author name here
-maintainer:     example@example.com
-copyright:      2018 Author name here
+author:         Shuji Narazaki
+maintainer:     shuji.narazaki@gmail.com
+copyright:      2018 Shuji Narazaki
 license:        BSD3
 license-file:   LICENSE
 build-type:     Simple
@@ -34,6 +34,8 @@ library
       src
   build-depends:
       base >=4.7 && <5
+    , containers
+    , mtl
   default-language: Haskell2010
 
 executable PL-typechecker-exe
@@ -46,6 +48,8 @@ executable PL-typechecker-exe
   build-depends:
       PL-typechecker
     , base >=4.7 && <5
+    , containers
+    , mtl
   default-language: Haskell2010
 
 test-suite PL-typechecker-test
@@ -59,4 +63,6 @@ test-suite PL-typechecker-test
   build-depends:
       PL-typechecker
     , base >=4.7 && <5
+    , containers
+    , mtl
   default-language: Haskell2010
