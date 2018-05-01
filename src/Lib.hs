@@ -1,6 +1,7 @@
 {-# LANGUAGE
     DeriveFunctor
   , GeneralizedNewtypeDeriving
+  , MultiWayIf
   , TupleSections
   #-}
 -- http://dev.stephendiehl.com/fun/006_hindley_milner.html
@@ -10,6 +11,22 @@ module Lib
     ( Expr(..)
     , runInfer
     , infer
+     -- * Testing
+    , Lit(..)
+    , Var(..)
+    , Binop(..)
+    , TVar(..)
+    , Type(..)
+    , typeInt
+    , typeBool
+    , typeChar
+    , TScheme(..)
+    , Typing
+    , TSubst
+    , TypeEnv(..)
+    , emptyEnv
+    , tySubst
+    , schemeOf
     ) where
 
 import Control.Monad
@@ -67,25 +84,25 @@ typeBool = TCon "Bool"
 typeChar :: Type
 typeChar = TCon "Char"
 
--- x         => Forall [TV "x"] (TV "x")
--- f x = x   => Forall [TV "x"] (TArr [(TV "x"), (TV "x")])
--- f x y = y => Forall [TV "x", TV "y"] (TArr [(TV "x"), (TV "x"), (TV "x")])
-data Scheme = Forall [TVar] Type
+-- x         => TScheme [TV "x"] (TV "x")
+-- f x = x   => TScheme [TV "x"] (TArr [(TV "x"), (TV "x")])
+-- f x y = y => TScheme [TV "x", TV "y"] (TArr [(TV "x"), (TV "x"), (TV "x")])
+data TScheme = TScheme [TVar] Type
   deriving (Eq, Ord, Show)
 
-type Typing = (Var, Scheme)
-type TSubst = (TVar, Type)
+type Typing = (Var, TScheme)
+type TSubst = (TVar, Type)      -- 型代入
 
 newtype TypeEnv = VarMap { unEnv :: [Typing] }
   deriving (Eq, Ord, Show)
 
-schemeOf :: TypeEnv -> Var -> Maybe Scheme
+schemeOf :: TypeEnv -> Var -> Maybe TScheme
 schemeOf e v = snd <$> find ((v ==) . fst) (unEnv e)
 
 without :: TypeEnv -> Var -> TypeEnv
 without (VarMap e) v = VarMap $ del e
   where
-    del :: [(Var, Scheme)] -> [(Var, Scheme)]
+    del :: [(Var, TScheme)] -> [(Var, TScheme)]
     del [] = []
     del (x@(var, _):ns)
       | var == v  = del ns
@@ -104,46 +121,51 @@ injectScheme e (v, s)
   | Just s' <- schemeOf e v = ([],) <$> unifyingSchemes s s'  -- 融合のための置換ルール
   | otherwise               = Just ([(v, s)], [])             -- 存在しなければ追加
 
-unifyingSchemes :: Scheme -> Scheme -> Maybe [TSubst]
+unifyingSchemes :: TScheme -> TScheme -> Maybe [TSubst]
 -- 1. identical patterns
-unifyingSchemes (Forall l1 t1@(TVar u1)) (Forall l2 t2@(TVar u2))
+unifyingSchemes (TScheme l1 t1@(TVar u1)) (TScheme l2 t2@(TVar u2))
   | notElem u1 l1 = Just [(u2, t1)]  -- u1 is global
   | otherwise     = Just [(u1, t2)]  -- u2 is global, or tie break
-unifyingSchemes (Forall _ (TCon tc)) (Forall _ (TCon tc'))
+unifyingSchemes (TScheme _ (TCon tc)) (TScheme _ (TCon tc'))
   | tc == tc' = Just []
   | otherwise  = Nothing
 -- 2. map to a single type variable
-unifyingSchemes (Forall _ (TVar tv)) (Forall _ t@(TCon _)) = Just [(tv, t)]
+unifyingSchemes (TScheme _ (TVar tv)) (TScheme _ t@(TCon _)) = Just [(tv, t)]
 -- 2. map to a single type variable (reflected)
-unifyingSchemes s1 s2@(Forall _ (TVar _)) = unifyingSchemes s2 s1
+unifyingSchemes s1 s2@(TScheme _ (TVar _)) = unifyingSchemes s2 s1
 
-substitute :: TypeEnv -> TSubst -> TypeEnv
-substitute e (tv, ty) = VarMap . map shaper $ unEnv e
+-- | 型変数を型で置き換える型代入
+-- >>> t = VarMap [(Var "x", TScheme [] (TCon "Int")), (Var "y", TScheme [TV "1"] (TVar (TV "1")))]
+-- >>> tySubst t (TV "1", TCon "Int")
+-- VarMap {unEnv = [(Var "x",TScheme [] (TCon "Int")),(Var "y",TScheme [] (TCon "Int"))]}
+-- >>> tySubst t (TV "2", TCon "Int")
+-- VarMap {unEnv = [(Var "x",TScheme [] (TCon "Int")),(Var "y",TScheme [TV "1"] (TVar (TV "1")))]}
+-- >>> tySubst t (TV "1", TV "2")
+-- VarMap {unEnv = [(Var "x",TScheme [] (TCon "Int")),(Var "y",TScheme [TV "1"] (TVar (TV "1")))]}
+tySubst :: TypeEnv -> TSubst -> TypeEnv
+tySubst e (tv, ty) = VarMap . map shaper $ unEnv e
   where
-    shaper (v, (Forall l t)) = (v, Forall (delete tv l) t')
-      where t' = case t of
-              (TVar tv) -> ty
-              otherwise -> t
-            lookdown :: Type -> Type
-            lookdown t@(TCon _) = t
-            lookdown t@(TVar tv') = if tv' == tv then ty else t
-            lookdown (TList t)    = TList (lookdown t)
-            lookdown (TPair l)    = TPair (map lookdown l)
-            lookdown (TArr l)     = TArr (map lookdown l)
+    shaper (v, TScheme l t) = (v, TScheme (delete tv l) (lookdown t))
+      where lookdown :: Type -> Type
+            lookdown t'@(TCon _) = t'
+            lookdown t'@(TVar tv') = if tv' == tv then ty else t'
+            lookdown (TList t')    = TList (lookdown t')
+            lookdown (TPair l')    = TPair (map lookdown l')
+            lookdown (TArr l')     = TArr (map lookdown l')
 
 update :: TypeEnv -> ([Typing], [TSubst]) -> TypeEnv
-update e (tl, sl) = foldl substitute (foldl extend e tl) sl
+update e (tl, sl) = foldl tySubst (foldl extend e tl) sl
 
 -- ここまで
 
 {-
-mergeSchemes :: Var -> Scheme -> Scheme -> Maybe Scheme
+mergeSchemes :: Var -> TScheme -> TScheme -> Maybe TScheme
 -- 1. identical patterns
-mergeSchemes v (Forall _ (TCon tc)) (Forall _ (TCon tc'))  = Just $ Forall [] (TCon tc)
-mergeSchemes v (Forall l1 t1@(TVar u1)) (Forall l2 t2@(TVar u2))
-  | l1 == [u1] && l2 ==[u2]  = Just $ Forall l1 t1
-  | null l1                  = Just $ Forall [] t1 -- free w.r.t. the scheme
-  | otherwise                = Just $ Forall [] t2 -- free w.r.t. the scheme
+mergeSchemes v (TScheme _ (TCon tc)) (TScheme _ (TCon tc'))  = Just $ TScheme [] (TCon tc)
+mergeSchemes v (TScheme l1 t1@(TVar u1)) (TScheme l2 t2@(TVar u2))
+  | l1 == [u1] && l2 ==[u2]  = Just $ TScheme l1 t1
+  | null l1                  = Just $ TScheme [] t1 -- free w.r.t. the scheme
+  | otherwise                = Just $ TScheme [] t2 -- free w.r.t. the scheme
 -- ここで詰まった。
 -- 操作としては以下の2種類を考えなければならない
 -- * 変数名に対してスキーマを割り当てる、変数に対する別々のスキーマを融合する
@@ -155,7 +177,7 @@ mergeSchemes v (Forall l1 t1@(TVar u1)) (Forall l2 t2@(TVar u2))
 -- * 型変数を型変数で置き換える： スキーマのリストから削除、スキーマの型を置換
 -- * 型変数を構造型で置き換える： スキーマのリストから削除、スキーマの型を置換
 -- どちらも処理としては同じ。また、処理の開始点はスキーマ間の融合で問題ない。
-mergeSchemes v (Forall l1 (TList t1)) (Forall l2 (TList t2))
+mergeSchemes v (TScheme l1 (TList t1)) (TScheme l2 (TList t2))
   |
 -- mergeSchemes v (TPair tp) (TPair tp') =
 -- mergeSchemes v (TArr ta) (TArr ta')   =
@@ -176,11 +198,11 @@ mergeSchemes v (Forall l1 (TList t1)) (Forall l2 (TList t2))
 mergeSchemes v _ _ = Nothing
 -}
 
--- extend emptyEnv (Var "x", Forall [] typeInt)
+-- extend emptyEnv (Var "x", TScheme [] typeInt)
 emptyEnv :: TypeEnv
 emptyEnv = VarMap []
 
--- Subst in a restricted 'TypeEnv' without 'Scheme'
+-- Subst in a restricted 'TypeEnv' without 'TScheme'
 -- type Subst = [(TVar, Type)]
 
 data TypeError
@@ -199,18 +221,18 @@ newTypeVar = do i <- get
                 put j
                 return $ TV ("(" ++ show j ++ ")")
 
-infer :: Expr -> Infer (Scheme, TypeEnv)
+infer :: Expr -> Infer (TScheme, TypeEnv)
 infer (Ref (Var n))     = do t <- newTypeVar  -- t :: TVar
-                             let e = Forall [t] (TVar t) :: Scheme
+                             let e = TScheme [t] (TVar t) :: TScheme
                              return (e, VarMap [(Var n, e)])
-infer (Lit (LInt _))    = return (Forall [] typeInt, emptyEnv)
-infer (Lit (LBool _))   = return (Forall [] typeBool, emptyEnv)
-infer (Lit (LString _)) = return (Forall [] typeChar, emptyEnv)
+infer (Lit (LInt _))    = return (TScheme [] typeInt, emptyEnv)
+infer (Lit (LBool _))   = return (TScheme [] typeBool, emptyEnv)
+infer (Lit (LString _)) = return (TScheme [] typeChar, emptyEnv)
 infer (Op Add x y)      = do (tx, ex) <- infer x
                              (ty, ey) <- infer y
-                             let int = Forall [] typeInt
+                             let int = TScheme [] typeInt
                              if tx == int && ty == int
-                               then return (Forall [] typeInt, append ex ey)
+                               then return (TScheme [] typeInt, append ex ey)
                                else error (show (tx, ty))
 
 
@@ -226,12 +248,12 @@ unifyOn _ _ _ Nothing = Nothing
 unifyOn e1 e2 v (Just e)
   | Just s1 <- schemeOf e1 v, Just s2 <- schemeOf e2 v = subst v s1 s2 =<< unify (e1 `without` v) (e2 `without` v)
  where
-   subst :: Var -> Scheme -> Scheme -> TypeEnv -> Maybe TypeEnv
+   subst :: Var -> TScheme -> TScheme -> TypeEnv -> Maybe TypeEnv
    subst = undefined
 
 {-
-unify :: TypeEnv -> TVar -> Scheme -> Scheme -> Maybe Scheme
-unify e t s@(Forall tl1 t1) (Forall tl2 t2) =
+unify :: TypeEnv -> TVar -> TScheme -> TScheme -> Maybe TScheme
+unify e t s@(TScheme tl1 t1) (TScheme tl2 t2) =
 
   | length tl1 /= length tl2 = Nothing
   | t1 == t2'                = Just s
@@ -251,12 +273,12 @@ injectTypeVar s d (TArr tl) = TArr $ map (injectTypeVar s d) tl
 {-
 
   case (a, b) of
-    (Forall _ (TVar _), Forall _ (TVar _))                -> Just s1
-    (Forall _ (TCon n1), Forall _ (TCon n2)) | n1 == n2   -> Just s1
-    (Forall _ (TCon _), Forall _ (TVar _))                -> Just s1
-    (Forall _ (TVar _), Forall _ (TCon _))                -> Just s2
-    (Forall _ (TList t1), Forall _ (TList t2)) | t1 == t2 -> Just s1
-    (Forall _ (TArr a1 a2)
+    (TScheme _ (TVar _), TScheme _ (TVar _))                -> Just s1
+    (TScheme _ (TCon n1), TScheme _ (TCon n2)) | n1 == n2   -> Just s1
+    (TScheme _ (TCon _), TScheme _ (TVar _))                -> Just s1
+    (TScheme _ (TVar _), TScheme _ (TCon _))                -> Just s2
+    (TScheme _ (TList t1), TScheme _ (TList t2)) | t1 == t2 -> Just s1
+    (TScheme _ (TArr a1 a2)
 
 unifiable' :: TypeEnv -> TypeEnv -> Maybe TypeEnv
 unifiable' (VarMap a) (VarMap b)
@@ -269,13 +291,13 @@ unifiable' (VarMap a) (VarMap b)
       uniVM = map unify comVs
       compl s = [ a | a <- s, notElem (fst a) comVs ]
       uniMV name e1 e2 = case (s1, s2) of
-        (Forall _ (TVar _), Forall _ (TVar _))                -> s1
-        (Forall _ (TCon n1), Forall _ (TCon n2)) | n1 == n2   -> s1
-        (Forall _ (TCon _), Forall _ (TVar _))                -> s1
-        (Forall _ (TVar _), Forall _ (TCon _))                -> s2
-        (Forall _ (TList t1), Forall _ (TList t2)) | t1 == t2 -> s1
-        (Forall _ (TArr a1 a2)
-          , Forall _ (TArr b1 b2)) | a1 == b1 && a2 == b2     -> s1
+        (TScheme _ (TVar _), TScheme _ (TVar _))                -> s1
+        (TScheme _ (TCon n1), TScheme _ (TCon n2)) | n1 == n2   -> s1
+        (TScheme _ (TCon _), TScheme _ (TVar _))                -> s1
+        (TScheme _ (TVar _), TScheme _ (TCon _))                -> s2
+        (TScheme _ (TList t1), TScheme _ (TList t2)) | t1 == t2 -> s1
+        (TScheme _ (TArr a1 a2)
+          , TScheme _ (TArr b1 b2)) | a1 == b1 && a2 == b2     -> s1
         where
           (Just (_, s1)) = find name e1
           (Just (_, s2)) = find name e2

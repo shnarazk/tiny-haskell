@@ -48,3 +48,4 @@ tests:
     - -with-rtsopts=-N
     dependencies:
     - PL-typechecker
+    - hspec
