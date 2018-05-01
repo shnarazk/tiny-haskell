@@ -3,9 +3,9 @@ import Test.Hspec
 import Lib
 
 t :: TypeEnv
-t = VarMap [ (Var "x", TScheme [] (TCon "Int"))
-           , (Var "y", TScheme [TV 1] (TVar (TV 1)))
-           ]
+t = Just $ VarMap [ (Var "x", TScheme [] (TCon "Int"))
+                  , (Var "y", TScheme [TV 1] (TVar (TV 1)))
+                  ]
 
 -- 1
 e1 :: Expr
@@ -46,7 +46,7 @@ spec = do
           Right e -> e
     let derivedBy e v = derived <$> schemeOf e v
     let (t1, s1) = infer' e1
-    it (show e1 ++ " => " ++ show t1) $ s1 `shouldBe` VarMap []
+    it (show e1 ++ " => " ++ show t1) $ s1 `shouldBe` emptyEnv
     let (t2, s2) = infer' e2
     it (show e2 ++ " => " ++ show t2) $ derivedBy s2 x `shouldBe` Just (TVar (TV 1))
     let (t3, s3) = infer' e3
