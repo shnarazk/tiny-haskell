@@ -7,6 +7,16 @@ t = VarMap [ (Var "x", TScheme [] (TCon "Int"))
            , (Var "y", TScheme [TV "1"] (TVar (TV "1")))
            ]
 
+-- (x + 3) * y
+e1 :: Expr
+e1 = Op Mul (Op Add (Ref (Var "x")) (Lit (LInt 3))) (Ref (Var "y"))
+
+-- [x * 3, y]
+e2 :: Expr
+e2 = List [ Op Mul (Ref (Var "x")) (Lit (LInt 3))
+          , Ref (Var "y")
+          ]
+
 spec :: Spec
 spec = do
   describe "TypeEnv operations" $ do

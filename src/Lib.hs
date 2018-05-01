@@ -39,9 +39,10 @@ type Name = String
 
 data Expr
   = Ref Var
-  | FA Var [Expr]
-  | App Expr Expr
+  | FA Var [Expr]               -- Function Application
+--  | App Expr Expr
   | Lit Lit
+  | List [Expr]
   | Pair [Expr]
   | Op Binop Expr Expr
   deriving (Show, Eq, Ord)
