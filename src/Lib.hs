@@ -1,6 +1,7 @@
 {-# LANGUAGE
     DeriveFunctor
   , GeneralizedNewtypeDeriving
+  , TupleSections
   #-}
 -- http://dev.stephendiehl.com/fun/006_hindley_milner.html
 -- https://github.com/sdiehl/write-you-a-haskell/blob/master/chapter7/poly/src/Infer.hs
@@ -72,7 +73,10 @@ typeChar = TCon "Char"
 data Scheme = Forall [TVar] Type
   deriving (Eq, Ord, Show)
 
-newtype TypeEnv = VarMap { unEnv :: [(Var, Scheme)] }
+type Typing = (Var, Scheme)
+type TSubst = (TVar, Type)
+
+newtype TypeEnv = VarMap { unEnv :: [Typing] }
   deriving (Eq, Ord, Show)
 
 schemeOf :: TypeEnv -> Var -> Maybe Scheme
@@ -87,12 +91,52 @@ without (VarMap e) v = VarMap $ del e
       | var == v  = del ns
       | otherwise = x : del ns
 
-extend :: TypeEnv -> (Var, Scheme) -> TypeEnv
+extend :: TypeEnv -> Typing -> TypeEnv
 extend (VarMap z) (x, s) = VarMap $ (x, s) : z
 
 append :: TypeEnv -> TypeEnv -> TypeEnv
 append (VarMap m1) (VarMap m2) = VarMap $ m1 ++ m2
 
+-- 環境は1つ。そこに束縛対を追加しようとする。
+-- 返値は新規に追加すべき束縛対、および型エラーなく融合するための置換ルール。
+injectScheme :: TypeEnv -> Typing -> Maybe ([Typing], [TSubst])
+injectScheme e (v, s)
+  | Just s' <- schemeOf e v = ([],) <$> unifyingSchemes s s'  -- 融合のための置換ルール
+  | otherwise               = Just ([(v, s)], [])             -- 存在しなければ追加
+
+unifyingSchemes :: Scheme -> Scheme -> Maybe [TSubst]
+-- 1. identical patterns
+unifyingSchemes (Forall l1 t1@(TVar u1)) (Forall l2 t2@(TVar u2))
+  | notElem u1 l1 = Just [(u2, t1)]  -- u1 is global
+  | otherwise     = Just [(u1, t2)]  -- u2 is global, or tie break
+unifyingSchemes (Forall _ (TCon tc)) (Forall _ (TCon tc'))
+  | tc == tc' = Just []
+  | otherwise  = Nothing
+-- 2. map to a single type variable
+unifyingSchemes (Forall _ (TVar tv)) (Forall _ t@(TCon _)) = Just [(tv, t)]
+-- 2. map to a single type variable (reflected)
+unifyingSchemes s1 s2@(Forall _ (TVar _)) = unifyingSchemes s2 s1
+
+substitute :: TypeEnv -> TSubst -> TypeEnv
+substitute e (tv, ty) = VarMap . map shaper $ unEnv e
+  where
+    shaper (v, (Forall l t)) = (v, Forall (delete tv l) t')
+      where t' = case t of
+              (TVar tv) -> ty
+              otherwise -> t
+            lookdown :: Type -> Type
+            lookdown t@(TCon _) = t
+            lookdown t@(TVar tv') = if tv' == tv then ty else t
+            lookdown (TList t)    = TList (lookdown t)
+            lookdown (TPair l)    = TPair (map lookdown l)
+            lookdown (TArr l)     = TArr (map lookdown l)
+
+update :: TypeEnv -> ([Typing], [TSubst]) -> TypeEnv
+update e (tl, sl) = foldl substitute (foldl extend e tl) sl
+
+-- ここまで
+
+{-
 mergeSchemes :: Var -> Scheme -> Scheme -> Maybe Scheme
 -- 1. identical patterns
 mergeSchemes v (Forall _ (TCon tc)) (Forall _ (TCon tc'))  = Just $ Forall [] (TCon tc)
@@ -112,9 +156,9 @@ mergeSchemes v (Forall l1 t1@(TVar u1)) (Forall l2 t2@(TVar u2))
 -- * 型変数を構造型で置き換える： スキーマのリストから削除、スキーマの型を置換
 -- どちらも処理としては同じ。また、処理の開始点はスキーマ間の融合で問題ない。
 mergeSchemes v (Forall l1 (TList t1)) (Forall l2 (TList t2))
-  | 
--- mergeSchemes v (TPair tp) (TPair tp') = 
--- mergeSchemes v (TArr ta) (TArr ta')   = 
+  |
+-- mergeSchemes v (TPair tp) (TPair tp') =
+-- mergeSchemes v (TArr ta) (TArr ta')   =
 
 -- 2. map to a single type variable
 -- mergeSchemes v (TVar tv) (TCon tc)  = undefined
@@ -130,14 +174,14 @@ mergeSchemes v (Forall l1 (TList t1)) (Forall l2 (TList t2))
 
 -- Otherwise, error
 mergeSchemes v _ _ = Nothing
-   
+-}
 
 -- extend emptyEnv (Var "x", Forall [] typeInt)
 emptyEnv :: TypeEnv
 emptyEnv = VarMap []
 
 -- Subst in a restricted 'TypeEnv' without 'Scheme'
-type Subst = [(TVar, Type)]
+-- type Subst = [(TVar, Type)]
 
 data TypeError
   = UnificationFail Type Type
@@ -234,6 +278,6 @@ unifiable' (VarMap a) (VarMap b)
         where
           (Just (_, s1)) = find name e1
           (Just (_, s2)) = find name e2
-  
+
 x = runInfer (Op Add (Lit (LInt 3)) (Ref (Var "x")))
 -}
