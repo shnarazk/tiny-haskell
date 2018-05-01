@@ -55,7 +55,10 @@ data Lit
   deriving (Eq, Ord, Show)
 
 data Var = Var Name
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord)
+
+instance Show Var where
+  show (Var name) = name
 
 data Binop = Add | Sub | Mul | Eql
   deriving (Eq, Ord, Show)
@@ -65,8 +68,11 @@ data Program = Program [Decl] Expr
 
 type Decl = (String, Expr)
 
-newtype TVar = TV Name
-  deriving (Show, Eq, Ord)
+newtype TVar = TV Int
+  deriving (Eq, Ord)
+
+instance Show TVar where
+  show (TV name) = "t" ++ show name
 
 data Type
  = TCon Name
@@ -85,10 +91,13 @@ typeBool = TCon "Bool"
 typeChar :: Type
 typeChar = TCon "Char"
 
--- x         => TScheme [TV "x"] (TV "x")
--- f x = x   => TScheme [TV "x"] (TArr [(TV "x"), (TV "x")])
--- f x y = y => TScheme [TV "x", TV "y"] (TArr [(TV "x"), (TV "x"), (TV "x")])
-data TScheme = TScheme [TVar] Type
+-- x         => TScheme [TV 1] (TV 1)
+-- f x = x   => TScheme [TV 1] (TArr [(TV 1), (TV 1)])
+-- f x y = y => TScheme [TV 1, TV 2] (TArr [(TV 1), (TV 1), (TV 1)])
+data TScheme =
+  TScheme { bounds  :: [TVar]
+          , derived :: Type
+          }
   deriving (Eq, Ord, Show)
 
 type Typing = (Var, TScheme)
@@ -135,14 +144,22 @@ unifyingSchemes (TScheme _ (TVar tv)) (TScheme _ t@(TCon _)) = Just [(tv, t)]
 -- 2. map to a single type variable (reflected)
 unifyingSchemes s1 s2@(TScheme _ (TVar _)) = unifyingSchemes s2 s1
 
+-- | 型を型で置き換える型代入
+subst :: TypeEnv -> (Type, Type) -> TypeEnv
+subst e (TCon t1, TCon t2)
+  | t1 == t2 = e
+  | otherwise = error "subst failed"
+subst e (TVar tv@(TV _), t2) = tySubst e (tv, t2)
+subst e x = error $ "subt: " ++ show x
+
 -- | 型変数を型で置き換える型代入
--- >>> t = VarMap [(Var "x", TScheme [] (TCon "Int")), (Var "y", TScheme [TV "1"] (TVar (TV "1")))]
--- >>> tySubst t (TV "1", TCon "Int")
+-- >>> t = VarMap [(Var "x", TScheme [] (TCon "Int")), (Var "y", TScheme [TV 1] (TVar (TV 1)))]
+-- >>> tySubst t (TV 1, TCon "Int")
 -- VarMap {unEnv = [(Var "x",TScheme [] (TCon "Int")),(Var "y",TScheme [] (TCon "Int"))]}
--- >>> tySubst t (TV "2", TCon "Int")
--- VarMap {unEnv = [(Var "x",TScheme [] (TCon "Int")),(Var "y",TScheme [TV "1"] (TVar (TV "1")))]}
--- >>> tySubst t (TV "1", TV "2")
--- VarMap {unEnv = [(Var "x",TScheme [] (TCon "Int")),(Var "y",TScheme [TV "1"] (TVar (TV "1")))]}
+-- >>> tySubst t (TV 2, TCon "Int")
+-- VarMap {unEnv = [(Var "x",TScheme [] (TCon "Int")),(Var "y",TScheme [TV 1] (TVar (TV 1)))]}
+-- >>> tySubst t (TV 1, TV 2)
+-- VarMap {unEnv = [(Var "x",TScheme [] (TCon "Int")),(Var "y",TScheme [TV 1] (TVar (TV 1)))]}
 tySubst :: TypeEnv -> TSubst -> TypeEnv
 tySubst e (tv, ty) = VarMap . map shaper $ unEnv e
   where
@@ -214,14 +231,36 @@ data TypeError
 type Infer a = State Int a
 
 -- runInfer :: Expr -> _
-runInfer e = fst $ runState (infer e) 0
+runInfer e = fst $ runState (infer emptyEnv e) 0
 
 newTypeVar :: Infer TVar
 newTypeVar = do i <- get
                 let j = i + 1
                 put j
-                return $ TV ("(" ++ show j ++ ")")
+                return $ TV j
 
+-- | 型環境下における与えられた式の型を返す
+-- | 型環境は部分式の評価において更新されるため、更新された型環境も返す必要がある。
+infer :: TypeEnv -> Expr -> Infer (Type, TypeEnv)
+infer e (Lit (LInt _)) = return (TCon "Int", e)
+infer e (Lit (LBool _)) = return (TCon "Bool", e)
+infer e (Lit (LString _)) = return (TList (TCon "Char"), e)
+infer e (Ref (Var n)) = do t <- newTypeVar  -- t :: TVar
+                           let s = TScheme [t] (TVar t)
+                           return $ (TVar t, extend e (Var n, s))
+infer e0 (Op op x y)
+  | elem op [Add, Sub, Mul]  = do (sx, e1) <- infer e0 x
+                                  let e2 = subst e1 (sx, typeInt)
+                                  (sy, e2) <- infer e2 y
+                                  let e3 = subst e2 (sy, typeInt)
+                                  return $ (typeInt, e3)
+  | elem op [Eql]            = do (tx, e1) <- infer e0 x
+                                  (ty, e2) <- infer e1 y
+                                  let e3 = subst e2 (tx, ty)
+                                  return $ (tx, e3)
+infer e x = error $ show (e, x)
+
+{-
 infer :: Expr -> Infer (TScheme, TypeEnv)
 infer (Ref (Var n))     = do t <- newTypeVar  -- t :: TVar
                              let e = TScheme [t] (TVar t) :: TScheme
@@ -235,8 +274,7 @@ infer (Op Add x y)      = do (tx, ex) <- infer x
                              if tx == int && ty == int
                                then return (TScheme [] typeInt, append ex ey)
                                else error (show (tx, ty))
-
-
+-}
 -- * @e1 // v :: TypeEnv@ と @e2 // v :: TypeEnv@ が unifiableであり、
 -- * e'の下で、vに関するs1, s2がunfiableならば、
 -- (v, s') : e' を理由にこれらはunifiableである。
