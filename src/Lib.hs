@@ -9,6 +9,7 @@
 
 module Lib
     ( Expr(..)
+    , TypeError(..)
     , runInfer
     , infer
      -- * Testing
@@ -37,6 +38,8 @@ import Control.Monad.State
 
 import Data.List
 import Data.Maybe
+import System.IO.Unsafe (unsafePerformIO)
+
 type Name = String
 
 data Expr
@@ -47,14 +50,27 @@ data Expr
   | List [Expr]
   | Pair [Expr]
   | Op Binop Expr Expr
-  deriving (Show, Eq, Ord)
+  deriving (Eq, Ord)
+
+instance Show Expr where
+  show (Ref v) = show v
+  show (Lit l) = show l
+  show (List l) = show l
+  show (Pair l) = "(" ++ intercalate ", " (map show l) ++ ")"
+  show (Op x e1 e2) = show e1 ++ " " ++ show x ++ " " ++ show e2
 
 data Lit
   = LInt Int
   | LBool Bool
   | LString String
   | LFunc String
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord)
+
+instance Show Lit where
+  show (LInt n) = show n
+  show (LBool b) = show b
+  show (LString s) = s
+  show (LFunc f) = f
 
 data Var = Var Name
   deriving (Eq, Ord)
@@ -63,7 +79,13 @@ instance Show Var where
   show (Var name) = name
 
 data Binop = Add | Sub | Mul | Eql
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord)
+
+instance Show Binop where
+  show Add = "+"
+  show Sub = "-"
+  show Mul = "*"
+  show Eql = "=="
 
 data Program = Program [Decl] Expr
   deriving Eq
@@ -82,7 +104,14 @@ data Type
  | TList Type
  | TPair [Type]
  | TArr [Type]
- deriving (Show, Eq, Ord)
+ deriving (Eq, Ord)
+
+instance Show Type where
+  show (TCon n) = n
+  show (TVar t) = show t
+  show (TList l) = show l
+  show (TPair l) = "(" ++ intercalate ", " (map show l) ++ ")"
+  show (TArr l) = "(" ++ intercalate " -> " (map show l) ++ ")"
 
 typeInt :: Type
 typeInt = TCon "Int"
@@ -100,13 +129,20 @@ data TScheme =
   TScheme { bounds  :: [TVar]
           , derived :: Type
           }
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord)
+
+instance Show TScheme where
+  show (TScheme [] t) = "Scheme:" ++ show t
+  show (TScheme tvs t) = "Scheme:" ++ show tvs ++ "." ++ show t
 
 type Typing = (Var, TScheme)
 type TSubst = (TVar, Type)      -- 型代入
 
 newtype VarMap = VarMap { unEnv :: [Typing] }
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord)
+
+instance Show VarMap where
+  show (VarMap l) = "Env:" ++ show l
 
 within :: ([Typing] -> [Typing]) -> VarMap -> VarMap
 within f (VarMap m) = VarMap $ f m
@@ -117,44 +153,17 @@ schemeOf :: TypeEnv -> Var -> Maybe TScheme
 schemeOf Nothing _ = Nothing
 schemeOf (Just e) v = snd <$> find ((v ==) . fst) (unEnv e)
 
-without :: TypeEnv -> Var -> TypeEnv
-without e v = VarMap . del . unEnv <$> e
-  where
-    del :: [(Var, TScheme)] -> [(Var, TScheme)]
-    del [] = []
-    del (x@(var, _):ns)
-      | var == v  = del ns
-      | otherwise = x : del ns
-
 extend :: TypeEnv -> Typing -> TypeEnv
 extend e (x, s) = within ((x, s) :) <$> e
 
--- 環境は1つ。そこに束縛対を追加しようとする。
--- 返値は新規に追加すべき束縛対、および型エラーなく融合するための置換ルール。
-injectScheme :: TypeEnv -> Typing -> Maybe ([Typing], [TSubst])
-injectScheme e (v, s)
-  | Just s' <- schemeOf e v = ([],) <$> unifyingSchemes s s'  -- 融合のための置換ルール
-  | otherwise               = Just ([(v, s)], [])             -- 存在しなければ追加
-
-unifyingSchemes :: TScheme -> TScheme -> Maybe [TSubst]
--- 1. identical patterns
-unifyingSchemes (TScheme l1 t1@(TVar u1)) (TScheme l2 t2@(TVar u2))
-  | notElem u1 l1 = Just [(u2, t1)]  -- u1 is global
-  | otherwise     = Just [(u1, t2)]  -- u2 is global, or tie break
-unifyingSchemes (TScheme _ (TCon tc)) (TScheme _ (TCon tc'))
-  | tc == tc' = Just []
-  | otherwise  = Nothing
--- 2. map to a single type variable
-unifyingSchemes (TScheme _ (TVar tv)) (TScheme _ t@(TCon _)) = Just [(tv, t)]
--- 2. map to a single type variable (reflected)
-unifyingSchemes s1 s2@(TScheme _ (TVar _)) = unifyingSchemes s2 s1
-
 -- | 型を型で置き換える型代入
 subst :: TypeEnv -> (Type, Type) -> TypeEnv
+subst Nothing _ = Nothing
 subst e (TCon t1, TCon t2)
   | t1 == t2 = e
   | otherwise = Nothing
 subst e (TVar tv@(TV _), t2) = tySubst e (tv, t2)
+subst e (t1, TVar tv@(TV _)) = tySubst e (tv, t1)
 subst e x = Nothing
 
 -- | 型変数を型で置き換える型代入
@@ -183,13 +192,11 @@ update e (tl, sl) = foldl tySubst (foldl extend e tl) sl
 emptyEnv :: TypeEnv
 emptyEnv = Just $ VarMap []
 
--- Subst in a restricted 'TypeEnv' without 'TScheme'
--- type Subst = [(TVar, Type)]
-
 data TypeError
   = UnificationFail Expr Type Type
   | InfiniteType TVar Expr Type
   | UnboundVariable Expr String
+  | NotImplemented Expr
   deriving (Eq, Show)
 
 type InferResult = Either TypeError (Type, TypeEnv)
@@ -213,18 +220,68 @@ infer e (Lit (LBool _)) = return (TCon "Bool", e)
 infer e (Lit (LString _)) = return (TList (TCon "Char"), e)
 infer e (Ref (Var n)) = do t <- newTypeVar  -- t :: TVar
                            let s = TScheme [t] (TVar t)
-                           return $ (TVar t, extend e (Var n, s))
-infer e0 exp@(Op op x y)
+                           return (TVar t, extend e (Var n, s))
+infer e (Pair ls) = do let loop [] ts e' = return (TPair (reverse ts), e')
+                           loop (x:xs) ts e0 = do
+                             (t, e1) <- infer e0 x
+                             when (isNothing e1) $ throwError (UnificationFail x t t)
+                             loop xs (t:ts) e1
+                       loop ls [] e
+infer e0 xp@(Op op x y)
   | elem op [Add, Sub, Mul]  = do (tx, e1) <- infer e0 x
                                   let e2 = subst e1 (tx, typeInt)
                                   when (isNothing e2) $ throwError (UnificationFail x tx typeInt)
-                                  (ty, e2) <- infer e2 y
-                                  let e3 = subst e2 (ty, typeInt)
-                                  when (isNothing e2) $ throwError (UnificationFail y ty typeInt)
-                                  return $ (typeInt, e3)
+                                  (ty, e3) <- infer e2 y
+                                  when (isNothing e3) $ throwError (UnificationFail y ty typeInt)
+                                  let e4 = subst e3 (ty, typeInt)
+                                  return (typeInt, e4)
   | elem op [Eql]            = do (tx, e1) <- infer e0 x
                                   (ty, e2) <- infer e1 y
-                                  let e3 = subst e2 (tx, ty)
-                                  when (isNothing e3) $ throwError (UnificationFail exp tx ty)
-                                  return $ (tx, e3)
-infer e x = error $ show (e, x)
+                                  case compatible tx ty of
+                                    Just t2 -> do
+                                      let e3 = subst e2 t2
+                                      when (isNothing e3) $ throwError (UnificationFail xp tx ty)
+                                      return (snd t2, e3)
+                                    Nothing -> throwError (UnificationFail xp tx ty)
+
+infer _ x = throwError $ NotImplemented x
+
+-- | wide to strict
+compatible :: Type -> Type -> Maybe (Type, Type)
+compatible t1@(TCon _) t2@(TCon _)
+  | t1 == t2 = Just (t2, t1)
+  | otherwise = Nothing
+compatible t1@(TCon _) t2 = Just (t2, t1)
+compatible t1 t2@(TCon _) = Just (t1, t2)
+compatible t1 t2 = error $ "compatible: " ++ show (t1, t2)
+
+{-
+without :: TypeEnv -> Var -> TypeEnv
+without e v = within del <$> e
+  where
+    del :: [(Var, TScheme)] -> [(Var, TScheme)]
+    del [] = []
+    del (x@(var, _):ns)
+      | var == v  = del ns
+      | otherwise = x : del ns
+
+-- 環境は1つ。そこに束縛対を追加しようとする。
+-- 返値は新規に追加すべき束縛対、および型エラーなく融合するための置換ルール。
+injectScheme :: TypeEnv -> Typing -> Maybe ([Typing], [TSubst])
+injectScheme e (v, s)
+  | Just s' <- schemeOf e v = ([],) <$> unifyingSchemes s s'  -- 融合のための置換ルール
+  | otherwise               = Just ([(v, s)], [])             -- 存在しなければ追加
+
+unifyingSchemes :: TScheme -> TScheme -> Maybe [TSubst]
+-- 1. identical patterns
+unifyingSchemes (TScheme l1 t1@(TVar u1)) (TScheme l2 t2@(TVar u2))
+  | notElem u1 l1 = Just [(u2, t1)]  -- u1 is global
+  | otherwise     = Just [(u1, t2)]  -- u2 is global, or tie break
+unifyingSchemes (TScheme _ (TCon tc)) (TScheme _ (TCon tc'))
+  | tc == tc' = Just []
+  | otherwise  = Nothing
+-- 2. map to a single type variable
+unifyingSchemes (TScheme _ (TVar tv)) (TScheme _ t@(TCon _)) = Just [(tv, t)]
+-- 2. map to a single type variable (reflected)
+unifyingSchemes s1 s2@(TScheme _ (TVar _)) = unifyingSchemes s2 s1
+-}
