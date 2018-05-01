@@ -55,7 +55,7 @@ data Expr
 instance Show Expr where
   show (Ref v) = show v
   show (Lit l) = show l
-  show (List l) = show l
+  show (List l) = "[" ++ intercalate ", " (map show l) ++ "]"
   show (Pair l) = "(" ++ intercalate ", " (map show l) ++ ")"
   show (Op x e1 e2) = show e1 ++ " " ++ show x ++ " " ++ show e2
 
@@ -109,7 +109,7 @@ data Type
 instance Show Type where
   show (TCon n) = n
   show (TVar t) = show t
-  show (TList l) = show l
+  show (TList l) = show [l]
   show (TPair l) = "(" ++ intercalate ", " (map show l) ++ ")"
   show (TArr l) = "(" ++ intercalate " -> " (map show l) ++ ")"
 
@@ -133,7 +133,7 @@ data TScheme =
 
 instance Show TScheme where
   show (TScheme [] t) = "Scheme:" ++ show t
-  show (TScheme tvs t) = "Scheme:" ++ show tvs ++ "." ++ show t
+  show (TScheme tvs t) = "Scheme:" ++ show (sort tvs) ++ "." ++ show t
 
 type Typing = (Var, TScheme)
 type TSubst = (TVar, Type)      -- 型代入
@@ -142,7 +142,7 @@ newtype VarMap = VarMap { unEnv :: [Typing] }
   deriving (Eq, Ord)
 
 instance Show VarMap where
-  show (VarMap l) = "Env:" ++ show l
+  show (VarMap l) = "Env:" ++ show (sort l)
 
 within :: ([Typing] -> [Typing]) -> VarMap -> VarMap
 within f (VarMap m) = VarMap $ f m
@@ -227,6 +227,17 @@ infer e (Pair ls) = do let loop [] ts e' = return (TPair (reverse ts), e')
                              when (isNothing e1) $ throwError (UnificationFail x t t)
                              loop xs (t:ts) e1
                        loop ls [] e
+infer e xp@(List ls) = do let loop [] t e' = return (TList t, e')
+                              loop (x:xs) t e0 = do
+                                (t', e1) <- infer e0 x
+                                case compatible t t' of
+                                  Just t2 -> do
+                                    let e2 = subst e1 t2
+                                    when (isNothing e2) $ throwError (UnificationFail xp t t')
+                                    loop xs (snd t2) e2
+                                  Nothing -> throwError (UnificationFail xp t t')
+                          v <- newTypeVar
+                          loop ls (TVar v) e
 infer e0 xp@(Op op x y)
   | elem op [Add, Sub, Mul]  = do (tx, e1) <- infer e0 x
                                   let e2 = subst e1 (tx, typeInt)
