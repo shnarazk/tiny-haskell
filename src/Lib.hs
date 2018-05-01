@@ -200,9 +200,9 @@ newTypeVar = do i <- get
                 return $ TV ("(" ++ show j ++ ")")
 
 infer :: Expr -> Infer (Scheme, TypeEnv)
-infer (Ref (Var n))     = do t <- newTypeVar
-                             let e = Forall [t] (TVar t)
-                             return (e, [(n, t)])
+infer (Ref (Var n))     = do t <- newTypeVar  -- t :: TVar
+                             let e = Forall [t] (TVar t) :: Scheme
+                             return (e, VarMap [(Var n, e)])
 infer (Lit (LInt _))    = return (Forall [] typeInt, emptyEnv)
 infer (Lit (LBool _))   = return (Forall [] typeBool, emptyEnv)
 infer (Lit (LString _)) = return (Forall [] typeChar, emptyEnv)
@@ -223,7 +223,8 @@ unify e1 e2 = foldr (unifyOn e1 e2) (Just emptyEnv) vars
 
 unifyOn :: TypeEnv -> TypeEnv -> Var -> Maybe TypeEnv -> Maybe TypeEnv
 unifyOn _ _ _ Nothing = Nothing
-unifyOn e1 e2 v (Just e) = subst v (schemeOf v e1) (schemeOf v e2) =<< unify (e1 `without` v) (e2 `without` v)
+unifyOn e1 e2 v (Just e)
+  | Just s1 <- schemeOf e1 v, Just s2 <- schemeOf e2 v = subst v s1 s2 =<< unify (e1 `without` v) (e2 `without` v)
  where
    subst :: Var -> Scheme -> Scheme -> TypeEnv -> Maybe TypeEnv
    subst = undefined
