@@ -41,12 +41,15 @@ spec = do
     it "subst t1 to [t1]" $ schemeOf res3 y `shouldBe` Just (TScheme [] (TList (TVar (TV 1))))
   describe "Infer" $ do
     let x = Var "x"
+    let infer' e = case runInfer e of
+          Left _ -> (TVar (TV (-1)), emptyEnv)
+          Right e -> e
     let derivedBy e v = derived <$> schemeOf e v
-    let (t1, s1) = runInfer e1
+    let (t1, s1) = infer' e1
     it (show e1 ++ " => " ++ show t1) $ s1 `shouldBe` VarMap []
-    let (t2, s2) = runInfer e2
+    let (t2, s2) = infer' e2
     it (show e2 ++ " => " ++ show t2) $ derivedBy s2 x `shouldBe` Just (TVar (TV 1))
-    let (t3, s3) = runInfer e3
+    let (t3, s3) = infer' e3
     it (show e3 ++ " => " ++ show t3) $ derivedBy s3 x `shouldBe` Just typeInt
-    let (t4, s4) = runInfer e4
+    let (t4, s4) = infer' e4
     it (show e4 ++ " => " ++ show t4) $ derivedBy s4 x `shouldBe` Just typeInt

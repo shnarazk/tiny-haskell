@@ -30,7 +30,8 @@ module Lib
     ) where
 
 import Control.Monad
---import Control.Monad.Except
+import Control.Monad.Identity
+import Control.Monad.Except
 import Control.Monad.State
 
 import Data.List
@@ -228,10 +229,11 @@ data TypeError
   | InfiniteType TVar Type
   | UnboundVariable String
 
-type Infer a = State Int a
+type Infer a = StateT Int (ExceptT String Identity) a
 
--- runInfer :: Expr -> _
-runInfer e = fst $ runState (infer emptyEnv e) 0
+runInfer :: Expr -> Either String (Type, TypeEnv)
+runInfer e = runIdentity $ runExceptT (evalStateT (infer emptyEnv e) 0)
+--runInfer e = runExceptT $ runState (infer emptyEnv e) 0
 
 newTypeVar :: Infer TVar
 newTypeVar = do i <- get
