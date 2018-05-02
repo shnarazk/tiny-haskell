@@ -49,6 +49,7 @@ data Expr
   | Lit Lit
   | List [Expr]
   | Pair [Expr]
+  | Paren Expr
   | Op Binop Expr Expr
   deriving (Eq, Ord)
 
@@ -57,6 +58,7 @@ instance Show Expr where
   show (Lit l) = show l
   show (List l) = "[" ++ intercalate ", " (map show l) ++ "]"
   show (Pair l) = "(" ++ intercalate ", " (map show l) ++ ")"
+  show (Paren e) = "(" ++ show e ++ ")"
   show (Op x e1 e2) = show e1 ++ " " ++ show x ++ " " ++ show e2
 
 data Lit
@@ -259,6 +261,7 @@ infer e xp@(List ls) = do let loop [] t e' = return (TList t, e')
                                   Nothing -> throwError (UnificationFail xp t t')
                           v <- newTypeVar
                           loop ls (TVar v) e
+infer e (Paren x) = infer e x
 infer e0 xp@(Op op x y)
   | elem op [Add, Sub, Mul]  = do (tx, e1) <- infer e0 x
                                   let e2 = subst e1 (tx, typeInt)

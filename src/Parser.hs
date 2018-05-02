@@ -1,8 +1,10 @@
 module Parser ( runHaskell
               ) where
 
+import Data.Functor
 import Text.Parsec
-import Text.Parsec.Char
+import qualified Text.Parsec.Token as P
+import Text.Parsec.Language (haskellDef)
 import Lib
 
 runHaskell :: String -> Either String Expr
@@ -12,56 +14,41 @@ runHaskell str = case parse hLine "ERROR" str of
                                in Left $ str ++ i ++ show err
                    Right x  -> Right x
 
-hVar :: Parsec String () Expr
-hVar = do
-  l <- letter
-  s <- many (choice [letter, digit])
-  return $ case l:s of
-             "False" -> Lit (LBool False)
-             "True"  -> Lit (LBool True)
-             str     -> Ref (Var str)
-
-hLitInt :: Parsec String () Expr
-hLitInt = do
-  n <- many digit
-  return $ Lit (LInt (read n))
-
-hParen :: Parsec String () Expr
-hParen = do
-  char '(' <* spaces
-  e <- hExpr <* spaces
-  char ')'
-  return e
-
-hTerm :: Parsec String () Expr
-hTerm = choice [ try hParen, try hVar, try hLitInt ]
-
-hOp :: Parsec String () Binop
-hOp = do
-  o <- choice [string "+", string "-", string "*", string "=="] <* spaces
-  let op = case o of
-             "+"  -> Add
-             "-"  -> Sub
-             "*"  -> Mul
-             "==" -> Eql
-  return op
+lexer       = P.makeTokenParser haskellDef
+parens      = P.parens lexer
+-- braces      = P.braces lexer
+brackets    = P.brackets lexer
+identifier  = P.identifier lexer
+integer     = P.integer lexer
+symbol      = P.symbol lexer
 
 hLine :: Parsec String () Expr
-hLine = do
-  e <- hExpr
-  spaces <* eof
-  return e
+hLine = hExpr <* eof
 
-hExpr :: Parsec String () Expr
-hExpr = do
-  l <- hTerm <* spaces
-  r <- many hExprN
-  let f (op, right) left = Op op left right
-  let x = foldr f l r
-  return x
+hExpr  = hExpr'  `chainl1` eqlop
+hExpr' = hTerm   `chainl1` addop
+hTerm  = hFactor `chainl1` mulop
 
--- hExprN :: Parsec String () Expr
-hExprN = do
-  o <- hOp <* spaces
-  r <- hExpr
-  return (o, r)
+eqlop :: Parsec String () (Expr -> Expr -> Expr)
+eqlop = symbol "==" $> Op Eql
+
+mulop :: Parsec String () (Expr -> Expr -> Expr)
+mulop = symbol "*" $> Op Mul
+
+addop :: Parsec String () (Expr -> Expr -> Expr)
+addop =   (symbol "+" $> Op Add)
+      <|> (symbol "-" $> Op Sub)
+
+hVar = f <$> identifier
+  where f "False" = Lit (LBool False)
+        f "True"  = Lit (LBool True)
+        f str     = Ref (Var str)
+
+hLitInt = Lit . LInt . fromInteger <$> integer
+
+hList = brackets $ List <$> sepBy hExpr (symbol ",")
+
+hParens = parens $ f <$> sepBy1 hExpr (symbol ",")
+  where f l = if length l == 1 then Paren (head l) else Pair l
+
+hFactor =  hList <|> hParens <|> hVar <|> hLitInt

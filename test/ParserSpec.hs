@@ -30,7 +30,7 @@ e3 = Op Add (Ref (Var "x")) (Lit (LInt 3))
 s4 :: String
 s4 = "(x + 4) * y"
 e4 :: Expr
-e4 = Op Mul (Op Add (Ref (Var "x")) (Lit (LInt 4))) (Ref (Var "y"))
+e4 = Op Mul (Paren (Op Add (Ref (Var "x")) (Lit (LInt 4)))) (Ref (Var "y"))
 
 -- x == True
 s5 :: String
@@ -42,7 +42,7 @@ e5 = Op Eql (Ref (Var "x")) (Lit (LBool True))
 s6 :: String
 s6 = "(x + 6) == True"
 e6 :: Expr
-e6 = Op Eql (Op Add (Ref (Var "x")) (Lit (LInt 6))) (Lit (LBool True))
+e6 = Op Eql (Paren (Op Add (Ref (Var "x")) (Lit (LInt 6)))) (Lit (LBool True))
 
 -- (x * 7, True)
 s7 :: String
