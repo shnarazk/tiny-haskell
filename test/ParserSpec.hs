@@ -78,7 +78,7 @@ e10 = Pair [ Ref (Var "x")
 
 spec :: Spec
 spec = do
-  describe "Parser" $ do
+  describe "Parse with Parsec" $ do
     let a1 = runHaskell s1
     it (show s1 ++ " => " ++ show a1) $ a1 `shouldBe` Right e1
     let a2 = runHaskell s2
@@ -94,7 +94,7 @@ spec = do
     let a7 = runHaskell s7
     it (show s7 ++ " => " ++ show a7) $ a7 `shouldBe` Right e7
     let a8 = runHaskell s8
-    it (show s8 ++ " => " ++ show a1) $ a8 `shouldBe` Right e8
+    it (show s8 ++ " => " ++ show a8) $ a8 `shouldBe` Right e8
     let a9 = runHaskell s9
     it (show s9 ++ " => " ++ show a9) $ a9 `shouldBe` Right e9
     let a10 = runHaskell s10
