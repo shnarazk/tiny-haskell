@@ -14,7 +14,7 @@ module Shared
   ) where
 
 import Parser
-import Lib
+import TypeInfer
 
 t :: TypeEnv
 t = Just $ VarMap [ (Var "x", TScheme [] (TCon "Int"))

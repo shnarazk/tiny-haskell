@@ -1,7 +1,7 @@
 module Main where
 
-import Lib
 import Parser
+import TypeInfer
 
 main :: IO ()
 main = do

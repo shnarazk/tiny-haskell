@@ -1,7 +1,7 @@
 module LibSpec (spec) where
 import Test.Hspec
 import Parser
-import Lib
+import TypeInfer
 import Shared
 
 spec :: Spec
