@@ -1,59 +1,8 @@
 module LibSpec (spec) where
 import Test.Hspec
+import Parser
 import Lib
-
-t :: TypeEnv
-t = Just $ VarMap [ (Var "x", TScheme [] (TCon "Int"))
-                  , (Var "y", TScheme [TV 1] (TVar (TV 1)))
-                  ]
-
--- 1
-e1 :: Expr
-e1 = Lit (LInt 1)
-
--- x
-e2 :: Expr
-e2 = Ref (Var "x")
-
--- x + 3
-e3 :: Expr
-e3 = Op Add (Ref (Var "x")) (Lit (LInt 3))
-
--- (x + 4) * y
-e4 :: Expr
-e4 = Op Mul (Op Add (Ref (Var "x")) (Lit (LInt 4))) (Ref (Var "y"))
-
--- x == True
-e5 :: Expr
-e5 = Op Eql (Ref (Var "x")) (Lit (LBool True))
-
--- (x + 6) == True
-e6 :: Expr
-e6 = Op Eql (Op Add (Ref (Var "x")) (Lit (LInt 6))) (Lit (LBool True))
-
--- (x * 7, True)
-e7 :: Expr
-e7 = Pair [ Op Mul (Ref (Var "x")) (Lit (LInt 7))
-          , (Lit (LBool True))
-          ]
-
--- (x * 8, y)
-e8 :: Expr
-e8 = Pair [ Op Mul (Ref (Var "x")) (Lit (LInt 8))
-          , (Ref (Var "y"))
-          ]
-
--- [x * 9, y]
-e9 :: Expr
-e9 = List [ Op Mul (Ref (Var "x")) (Lit (LInt 9))
-          , Ref (Var "y")
-          ]
-
--- (x, y)
-e10 :: Expr
-e10 = Pair [ Ref (Var "x")
-           , Ref (Var "y")
-          ]
+import Shared
 
 spec :: Spec
 spec = do
