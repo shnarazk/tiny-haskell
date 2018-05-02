@@ -271,7 +271,7 @@ infer e0 xp@(Op op x y)
                                     Just t2 -> do
                                       let e3 = subst e2 t2
                                       when (isNothing e3) $ throwError (UnificationFail xp tx ty)
-                                      return (snd t2, e3)
+                                      return (typeBool, e3)
                                     Nothing -> throwError (UnificationFail xp tx ty)
 
 infer _ x = throwError $ NotImplemented x
