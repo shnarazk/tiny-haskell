@@ -237,9 +237,11 @@ infer :: TypeEnv -> Expr -> Infer (Type, TypeEnv)
 infer e (Lit (LInt _)) = return (TCon "Int", e)
 infer e (Lit (LBool _)) = return (TCon "Bool", e)
 infer e (Lit (LString _)) = return (TList (TCon "Char"), e)
-infer e (Ref (Var n)) = do t <- newTypeVar  -- t :: TVar
-                           let s = TScheme [t] (TVar t)
-                           return (TVar t, extend e (Var n, s))
+infer e (Ref v@(Var n)) = case find ((v ==) . fst) . unEnv =<< e of
+                            Just (_, TScheme _ t) -> return (t, e)
+                            Nothing -> do t <- newTypeVar  -- t :: TVar
+                                          let s = TScheme [t] (TVar t)
+                                          return (TVar t, extend e (Var n, s))
 infer e (Pair ls) = do let loop [] ts e' = return (TPair (reverse ts), e')
                            loop (x:xs) ts e0 = do
                              (t, e1) <- infer e0 x
