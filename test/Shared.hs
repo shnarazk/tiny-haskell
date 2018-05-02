@@ -13,7 +13,7 @@ module Shared
   , s11, e11
   ) where
 
-import Parser
+import Syntax
 import TypeInfer
 
 t :: TypeEnv

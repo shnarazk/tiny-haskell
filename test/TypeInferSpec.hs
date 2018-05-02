@@ -1,6 +1,6 @@
-module LibSpec (spec) where
+module TypeInferSpec (spec) where
 import Test.Hspec
-import Parser
+import Syntax
 import TypeInfer
 import Shared
 

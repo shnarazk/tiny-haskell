@@ -35,7 +35,7 @@ import Control.Monad.State
 import Data.List
 import Data.Maybe
 import System.IO.Unsafe (unsafePerformIO)
-import Parser
+import Syntax
 
 -------------------------------------------------------------------------------- Type system
 
