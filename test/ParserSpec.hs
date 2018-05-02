@@ -3,11 +3,6 @@ import Test.Hspec
 import Lib
 import Parser
 
-t :: TypeEnv
-t = Just $ VarMap [ (Var "x", TScheme [] (TCon "Int"))
-                  , (Var "y", TScheme [TV 1] (TVar (TV 1)))
-                  ]
-
 -- 1
 s1 :: String
 s1 = "1"
