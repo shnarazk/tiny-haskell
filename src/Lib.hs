@@ -286,34 +286,3 @@ compatible t1@(TCon _) t2@(TCon _)
 compatible t1@(TCon _) t2 = Just (t2, t1)
 compatible t1 t2@(TCon _) = Just (t1, t2)
 compatible t1 t2 = error $ "compatible: " ++ show (t1, t2)
-
-{-
-without :: TypeEnv -> Var -> TypeEnv
-without e v = within del <$> e
-  where
-    del :: [(Var, TScheme)] -> [(Var, TScheme)]
-    del [] = []
-    del (x@(var, _):ns)
-      | var == v  = del ns
-      | otherwise = x : del ns
-
--- 環境は1つ。そこに束縛対を追加しようとする。
--- 返値は新規に追加すべき束縛対、および型エラーなく融合するための置換ルール。
-injectScheme :: TypeEnv -> Typing -> Maybe ([Typing], [TSubst])
-injectScheme e (v, s)
-  | Just s' <- schemeOf e v = ([],) <$> unifyingSchemes s s'  -- 融合のための置換ルール
-  | otherwise               = Just ([(v, s)], [])             -- 存在しなければ追加
-
-unifyingSchemes :: TScheme -> TScheme -> Maybe [TSubst]
--- 1. identical patterns
-unifyingSchemes (TScheme l1 t1@(TVar u1)) (TScheme l2 t2@(TVar u2))
-  | notElem u1 l1 = Just [(u2, t1)]  -- u1 is global
-  | otherwise     = Just [(u1, t2)]  -- u2 is global, or tie break
-unifyingSchemes (TScheme _ (TCon tc)) (TScheme _ (TCon tc'))
-  | tc == tc' = Just []
-  | otherwise  = Nothing
--- 2. map to a single type variable
-unifyingSchemes (TScheme _ (TVar tv)) (TScheme _ t@(TCon _)) = Just [(tv, t)]
--- 2. map to a single type variable (reflected)
-unifyingSchemes s1 s2@(TScheme _ (TVar _)) = unifyingSchemes s2 s1
--}
