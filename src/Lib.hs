@@ -156,6 +156,25 @@ schemeOf (Just e) v = snd <$> find ((v ==) . fst) (unEnv e)
 extend :: TypeEnv -> Typing -> TypeEnv
 extend e (x, s) = within ((x, s) :) <$> e
 
+class HasFreeVars s where
+  freevars :: s -> [TVar]
+
+instance HasFreeVars Type where
+  freevars (TCon _)  = []
+  freevars (TVar x)  = [x]
+  freevars (TList t) = freevars t
+  freevars (TPair l) = nub $ concatMap freevars l
+  freevars (TArr l)  =  nub $ concatMap freevars l
+
+instance HasFreeVars TScheme where
+  freevars (TScheme tl t) = freevars t \\ tl
+
+instance HasFreeVars VarMap where
+  freevars e = nub $ concatMap (freevars .snd) (unEnv e)
+
+overlapped :: VarMap -> TScheme -> Bool
+overlapped e (TScheme vs _) = null $ intersect (freevars e)  vs
+
 -- | 型を型で置き換える型代入
 subst :: TypeEnv -> (Type, Type) -> TypeEnv
 subst Nothing _ = Nothing
