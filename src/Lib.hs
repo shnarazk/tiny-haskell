@@ -40,6 +40,8 @@ import Data.List
 import Data.Maybe
 import System.IO.Unsafe (unsafePerformIO)
 
+-------------------------------------------------------------------------------- Expression
+
 type Name = String
 
 data Expr
@@ -51,6 +53,7 @@ data Expr
   | Pair [Expr]
   | Paren Expr
   | Op Binop Expr Expr
+  | Let Var Expr Expr
   deriving (Eq, Ord)
 
 instance Show Expr where
@@ -60,6 +63,7 @@ instance Show Expr where
   show (Pair l) = "(" ++ intercalate ", " (map show l) ++ ")"
   show (Paren e) = "(" ++ show e ++ ")"
   show (Op x e1 e2) = show e1 ++ " " ++ show x ++ " " ++ show e2
+  show (Let v e1 e2) = "let " ++ show v ++ " = " ++ show e1 ++ " in " ++ show e2
 
 data Lit
   = LInt Int
@@ -93,6 +97,8 @@ data Program = Program [Decl] Expr
   deriving Eq
 
 type Decl = (String, Expr)
+
+-------------------------------------------------------------------------------- Type system
 
 newtype TVar = TV Int
   deriving (Eq, Ord)
@@ -134,8 +140,8 @@ data TScheme =
   deriving (Eq, Ord)
 
 instance Show TScheme where
-  show (TScheme [] t) = "Scheme:" ++ show t
-  show (TScheme tvs t) = "Scheme:" ++ show (sort tvs) ++ "." ++ show t
+  show (TScheme [] t) = "S:" ++ show t
+  show (TScheme tvs t) = "S" ++ show (sort tvs) ++ "." ++ show t
 
 type Typing = (Var, TScheme)
 type TSubst = (TVar, Type)      -- 型代入
@@ -144,7 +150,9 @@ newtype VarMap = VarMap { unEnv :: [Typing] }
   deriving (Eq, Ord)
 
 instance Show VarMap where
-  show (VarMap l) = "Env:" ++ show (sort l)
+  show (VarMap l) = "E{" ++ intercalate ", " (map f (sort l)) ++ "}"
+    where f (v, TScheme [] t) = show v ++ " :: " ++ show t
+          f (v, s) = show v ++ " :: " ++ show s
 
 within :: ([Typing] -> [Typing]) -> VarMap -> VarMap
 within f (VarMap m) = VarMap $ f m
@@ -178,14 +186,17 @@ overlapped :: VarMap -> TScheme -> Bool
 overlapped e (TScheme vs _) = null $ intersect (freevars e)  vs
 
 -- | 型を型で置き換える型代入
-subst :: TypeEnv -> (Type, Type) -> TypeEnv
-subst Nothing _ = Nothing
-subst e (TCon t1, TCon t2)
+subst :: TypeEnv -> [(Type, Type)] -> TypeEnv
+subst e l = foldl subst' e l
+
+subst' :: TypeEnv -> (Type, Type) -> TypeEnv
+subst' Nothing _ = Nothing
+subst' e (TCon t1, TCon t2)
   | t1 == t2 = e
   | otherwise = Nothing
-subst e (TVar tv@(TV _), t2) = tySubst e (tv, t2)
-subst e (t1, TVar tv@(TV _)) = tySubst e (tv, t1)
-subst e x = Nothing
+subst' e (TVar tv@(TV _), t2) = tySubst e (tv, t2)
+subst' e (t1, TVar tv@(TV _)) = tySubst e (tv, t1)
+subst' e x = Nothing
 
 -- | 型変数を型で置き換える型代入
 -- >>> t = VarMap [(Var "x", TScheme [] (TCon "Int")), (Var "y", TScheme [TV 1] (TVar (TV 1)))]
@@ -228,64 +239,79 @@ runInfer :: Expr -> InferResult
 runInfer e = runIdentity $ runExceptT (evalStateT (infer emptyEnv e) 0)
 
 newTypeVar :: Infer TVar
-newTypeVar = do i <- get
-                let j = i + 1
-                put j
-                return $ TV j
+newTypeVar = do i <- (1 +) <$> get
+                put i
+                return $ TV i
 
--- | 型環境下における与えられた式の型を返す
+-- | 型環境e下における与えられた式の型を返す
 -- | 型環境は部分式の評価において更新されるため、更新された型環境も返す必要がある。
 infer :: TypeEnv -> Expr -> Infer (Type, TypeEnv)
-infer e (Lit (LInt _)) = return (TCon "Int", e)
-infer e (Lit (LBool _)) = return (TCon "Bool", e)
+infer e (Lit (LInt _))    = return (TCon "Int", e)
+infer e (Lit (LBool _))   = return (TCon "Bool", e)
 infer e (Lit (LString _)) = return (TList (TCon "Char"), e)
 infer e (Ref v@(Var n)) = case find ((v ==) . fst) . unEnv =<< e of
                             Just (_, TScheme _ t) -> return (t, e)
                             Nothing -> do t <- newTypeVar  -- t :: TVar
                                           let s = TScheme [t] (TVar t)
                                           return (TVar t, extend e (Var n, s))
-infer e (Pair ls) = do let loop [] ts e' = return (TPair (reverse ts), e')
-                           loop (x:xs) ts e0 = do
-                             (t, e1) <- infer e0 x
-                             when (isNothing e1) $ throwError (UnificationFail x t t)
-                             loop xs (t:ts) e1
-                       loop ls [] e
-infer e xp@(List ls) = do let loop [] t e' = return (TList t, e')
-                              loop (x:xs) t e0 = do
-                                (t', e1) <- infer e0 x
-                                case compatible t t' of
-                                  Just t2 -> do
-                                    let e2 = subst e1 t2
-                                    when (isNothing e2) $ throwError (UnificationFail xp t t')
-                                    loop xs (snd t2) e2
-                                  Nothing -> throwError (UnificationFail xp t t')
-                          v <- newTypeVar
-                          loop ls (TVar v) e
+infer e (Pair ls) = do
+  let loop [] ts e' = return (TPair (reverse ts), e')
+      loop (x:xs) ts e0 = do
+        (t, e1) <- infer e0 x
+        when (isNothing e1) $ throwError (UnificationFail x t t)
+        loop xs (t:ts) e1
+  loop ls [] e
+infer e xp@(List ls) = do
+  let loop [] t e' = return (TList t, e')
+      loop (x:xs) t e0 = do
+        (t', e1) <- infer e0 x
+        case unifier t t' of
+          Just u -> do
+            let e2 = subst e1 [(t, u), (t', u)]
+            when (isNothing e2) $ throwError (UnificationFail xp t t')
+            loop xs u e2
+          Nothing -> throwError (UnificationFail xp t t')
+  v <- newTypeVar
+  loop ls (TVar v) e
 infer e (Paren x) = infer e x
 infer e0 xp@(Op op x y)
-  | elem op [Add, Sub, Mul]  = do (tx, e1) <- infer e0 x
-                                  let e2 = subst e1 (tx, typeInt)
-                                  when (isNothing e2) $ throwError (UnificationFail x tx typeInt)
-                                  (ty, e3) <- infer e2 y
-                                  when (isNothing e3) $ throwError (UnificationFail y ty typeInt)
-                                  let e4 = subst e3 (ty, typeInt)
-                                  return (typeInt, e4)
-  | elem op [Eql]            = do (tx, e1) <- infer e0 x
-                                  (ty, e2) <- infer e1 y
-                                  case compatible tx ty of
-                                    Just t2 -> do
-                                      let e3 = subst e2 t2
-                                      when (isNothing e3) $ throwError (UnificationFail xp tx ty)
-                                      return (typeBool, e3)
-                                    Nothing -> throwError (UnificationFail xp tx ty)
+  | elem op [Add, Sub, Mul]  = do
+      (tx, e1) <- infer e0 x
+      let e2 = subst e1 [(tx, typeInt)]
+      when (isNothing e2) $ throwError (UnificationFail x tx typeInt)
+      (ty, e3) <- infer e2 y
+      when (isNothing e3) $ throwError (UnificationFail y ty typeInt)
+      let e4 = subst e3 [(ty, typeInt)]
+      return (typeInt, e4)
+  | elem op [Eql] = do
+      (tx, e1) <- infer e0 x
+      (ty, e2) <- infer e1 y
+      case unifier tx ty of
+        Just u -> do
+          let e3 = subst e2 [(tx, u), (ty, u)]
+          when (isNothing e3) $ throwError (UnificationFail xp tx ty)
+          return (typeBool, e3)
+        Nothing -> throwError (UnificationFail xp tx ty)
 
 infer _ x = throwError $ NotImplemented x
 
--- | wide to strict
-compatible :: Type -> Type -> Maybe (Type, Type)
-compatible t1@(TCon _) t2@(TCon _)
-  | t1 == t2 = Just (t2, t1)
+-- TODO: add occurence checking
+unifier :: Type -> Type -> Maybe Type
+-- Constant
+unifier t1@(TCon _) t2@(TCon _)
+  | t1 == t2 = Just t1
   | otherwise = Nothing
-compatible t1@(TCon _) t2 = Just (t2, t1)
-compatible t1 t2@(TCon _) = Just (t1, t2)
-compatible t1 t2 = error $ "compatible: " ++ show (t1, t2)
+unifier t@(TCon _) (TVar _) = Just t
+unifier (TCon _) _ = Nothing
+unifier t1 t2@(TCon _) = unifier t2 t1
+-- Var
+unifier t1@(TVar _) (TVar _) = Just t1
+unifier (TVar _) t2@(TList _) = Just t2
+unifier (TVar _) t2@(TPair _) = Just t2
+unifier (TVar _) t2@(TArr _) = Just t2
+unifier t1 t2@(TVar _) = unifier t2 t1
+-- Compound types
+unifier (TList t1) (TList t2) = TList <$> unifier t1 t2
+unifier (TPair l1) (TPair l2) = TArr <$> zipWithM unifier l1 l2
+unifier (TArr l1) (TArr l2) = TArr <$> zipWithM unifier l1 l2
+unifier _ _ = Nothing

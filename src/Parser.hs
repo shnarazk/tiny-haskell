@@ -25,7 +25,7 @@ symbol      = P.symbol lexer
 hLine :: Parsec String () Expr
 hLine = hExpr <* eof
 
-hExpr  = hExpr'  `chainl1` eqlop
+hExpr  = hLet <|> hExpr'  `chainl1` eqlop
 hExpr' = hTerm   `chainl1` addop
 hTerm  = hFactor `chainl1` mulop
 
@@ -52,3 +52,14 @@ hParens = parens $ f <$> sepBy1 hExpr (symbol ",")
   where f l = if length l == 1 then Paren (head l) else Pair l
 
 hFactor =  hList <|> hParens <|> hVar <|> hLitInt
+
+hLet = do
+  symbol "let"
+  e0 <- hVar
+  symbol "="
+  e1 <- hExpr
+  symbol "in"
+  e2 <- hExpr
+  case e0 of
+    Ref v -> return $ Let v e1 e2
+    _     -> fail "invalid var to assign"

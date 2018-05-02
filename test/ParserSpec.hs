@@ -71,6 +71,12 @@ e10 = Pair [ Ref (Var "x")
            , Ref (Var "y")
           ]
 
+-- let x = 11 in x
+s11 :: String
+s11 = "let x = 11 in x"
+e11 :: Expr
+e11 = Let (Var "x") (Lit (LInt 11)) (Ref (Var "x"))
+
 spec :: Spec
 spec = do
   describe "Parse with Parsec" $ do
@@ -94,3 +100,5 @@ spec = do
     it (show s9 ++ " => " ++ show a9) $ a9 `shouldBe` Right e9
     let a10 = runHaskell s10
     it (show s10 ++ " => " ++ show a10) $ a10 `shouldBe` Right e10
+    let a11 = runHaskell s11
+    it (show s11 ++ " => " ++ show a11) $ a11 `shouldBe` Right e11
