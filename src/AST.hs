@@ -26,6 +26,7 @@ data Expr
   | Paren Expr
   | Op Binop Expr Expr
   | Let Var Expr Expr
+  | NullExpr
   deriving (Eq, Ord)
 
 instance Show Expr where
@@ -36,6 +37,7 @@ instance Show Expr where
   show (Paren e) = "(" ++ show e ++ ")"
   show (Op x e1 e2) = show e1 ++ " " ++ show x ++ " " ++ show e2
   show (Let v e1 e2) = "let " ++ show v ++ " = " ++ show e1 ++ " in " ++ show e2
+  show NullExpr = "_|_"
 
 data Lit
   = LInt Int

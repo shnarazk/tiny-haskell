@@ -13,7 +13,7 @@ parseHaskell :: String -> Either String Expr
 parseHaskell str = case parse hLine "ERROR" str of
                      Left err -> let l = lines str !! ((max (length (lines str)) (sourceLine (errorPos err) - 1)) -1)
                                      i = replicate (sourceColumn (errorPos err) -1) ' ' ++ "^\n"
-                                 in Left $ l ++ i ++ show err
+                                 in Left $ l ++ "\n" ++ i ++ show err
                      Right x  -> Right x
 
 lexer       = P.makeTokenParser haskellDef

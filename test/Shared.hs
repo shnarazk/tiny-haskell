@@ -1,18 +1,4 @@
-module Shared
-  ( t
-  , s1, e1
-  , s2, e2
-  , s3, e3
-  , s4, e4
-  , s5, e5
-  , s6, e6
-  , s7, e7
-  , s8, e8
-  , s9, e9
-  , s10, e10
-  , s11, e11
-  , s12, e12
-  ) where
+module Shared ( t, targets ) where
 
 import AST
 import Typing
@@ -22,82 +8,62 @@ t = Just $ VarMap [ (Var "x", TScheme [] (TCon "Int"))
                   , (Var "y", TScheme [TV 1] (TVar (TV 1)))
                   ]
 
--- 1
-s1 :: String
-s1 = "1"
-e1 :: Expr
-e1 = Lit (LInt 1)
+type Instance = (Int, String, Expr, Either TypeError Type)
 
--- x
-s2 :: String
-s2 = "x"
-e2 :: Expr
-e2 = Ref (Var "x")
+targets :: [Instance]
+targets = zipWith (\i (s, a, t) -> (i, s, a, t)) [1..] targets'
 
--- x + 3
-s3 :: String
-s3 = "x + 3"
-e3 :: Expr
-e3 = Op Add (Ref (Var "x")) (Lit (LInt 3))
-
--- (x + 4) * y
-s4 :: String
-s4 = "(x + 4) * y"
-e4 :: Expr
-e4 = Op Mul (Paren (Op Add (Ref (Var "x")) (Lit (LInt 4)))) (Ref (Var "y"))
-
--- x == True
-s5 :: String
-s5 = "x == True"
-e5 :: Expr
-e5 = Op Eql (Ref (Var "x")) (Lit (LBool True))
-
--- (x + 6) == True
-s6 :: String
-s6 = "(x + 6) == True"
-e6 :: Expr
-e6 = Op Eql (Paren (Op Add (Ref (Var "x")) (Lit (LInt 6)))) (Lit (LBool True))
-
--- (x * 7, True)
-s7 :: String
-s7 = "(x * 7, True)"
-e7 :: Expr
-e7 = Pair [ Op Mul (Ref (Var "x")) (Lit (LInt 7))
-          , (Lit (LBool True))
-          ]
-
--- (x * 8, y)
-s8 :: String
-s8 = "(x * 8, y)"
-e8 :: Expr
-e8 = Pair [ Op Mul (Ref (Var "x")) (Lit (LInt 8))
-          , (Ref (Var "y"))
-          ]
-
--- [x * 9, y]
-s9 :: String
-s9 = "[x * 9, y]"
-e9 :: Expr
-e9 = List [ Op Mul (Ref (Var "x")) (Lit (LInt 9))
-          , Ref (Var "y")
-          ]
-
--- (x, y)
-s10 :: String
-s10 = "(x, y)"
-e10 :: Expr
-e10 = Pair [ Ref (Var "x")
-           , Ref (Var "y")
-          ]
-
--- let x = 11 in x
-s11 :: String
-s11 = "let x = 11 in x"
-e11 :: Expr
-e11 = Let (Var "x") (Lit (LInt 11)) (Ref (Var "x"))
-
--- let x = y in x + 12
-s12 :: String
-s12 = "let x = y in x + 12"
-e12 :: Expr
-e12 = Let (Var "x") (Ref (Var "y")) (Op Add (Ref (Var "x")) (Lit (LInt 12)))
+targets' =
+  [ ( "1"
+    , Lit (LInt 1)
+    , Right TInt
+    )
+  , ( "*"
+    , NullExpr
+    , Right TInt
+    )
+  , ( "x"
+    , Ref (Var "x")
+    , Right (TVar (TV 1))
+    )
+  , ( "x + 3"
+    , Op Add (Ref (Var "x")) (Lit (LInt 3))
+    , Right TInt
+    )
+  , ( "(x + 4) * y"
+    , Op Mul (Paren (Op Add (Ref (Var "x")) (Lit (LInt 4)))) (Ref (Var "y"))
+    , Right TInt
+    )
+  , ( "x == True"
+    , Op Eql (Ref (Var "x")) (Lit (LBool True))
+    , Right TBool
+    )
+  , ( "(x + 6) == True"
+    , Op Eql (Paren (Op Add (Ref (Var "x")) (Lit (LInt 6)))) (Lit (LBool True))
+    , Left (UnificationFail NullExpr TInt TBool)
+    )
+  , ( "(x * 7, True)"
+    , Pair [ Op Mul (Ref (Var "x")) (Lit (LInt 7)), (Lit (LBool True))]
+    , Right (TTpl [TInt, TBool])
+    )
+  , ( "(x * 8, y)"
+    , Pair [ Op Mul (Ref (Var "x")) (Lit (LInt 8)), (Ref (Var "y"))]
+    , Right (TTpl [TInt, TVar (TV 2)])
+    )
+  , ( "[x * 9, y]"
+    , List [ Op Mul (Ref (Var "x")) (Lit (LInt 9)), Ref (Var "y")]
+    , Right (TLst TInt)
+    )
+  , ( "(x, y)"
+    , Pair [ Ref (Var "x") , Ref (Var "y")]
+    , Right (TTpl [TVar (TV 1), TVar (TV 2)])
+    )
+  , ( "let x = 11 in x"
+    , Let (Var "x") (Lit (LInt 11)) (Ref (Var "x"))
+    , Right TInt
+    )
+  , ( "let x = y in x + 12"
+    , Let (Var "x") (Ref (Var "y")) (Op Add (Ref (Var "x")) (Lit (LInt 12)))
+    , Right TInt
+    )
+  ]
