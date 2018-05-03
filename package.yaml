@@ -38,6 +38,14 @@ executables:
     - -with-rtsopts=-N
     dependencies:
     - PL-typechecker
+  TypeCheck-bot:
+    source-dirs:         discord
+    main:                TC-bot.hs
+    dependencies:
+      - PL-typechecker
+      - discord-hs
+      - text==1.2.*
+      - req
 
 tests:
   PL-typechecker-test:
