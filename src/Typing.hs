@@ -2,28 +2,24 @@
     DeriveFunctor
   , GeneralizedNewtypeDeriving
   , MultiWayIf
+  , PatternSynonyms
   , TupleSections
   #-}
 -- http://dev.stephendiehl.com/fun/006_hindley_milner.html
 -- https://github.com/sdiehl/write-you-a-haskell/blob/master/chapter7/poly/src/Infer.hs
 
-module TypeInfer
+module Typing
   ( TypeError(..)
   , runInfer
   , infer
     -- * Testing
   , TVar(..)
-  , Type(..)
+  , Type(..,TBool,TInt,TChar,TString)
   , VarMap(..)
-  , typeInt
-  , typeBool
-  , typeChar
-  , TScheme(..)
-  , Typing
-  , TSubst
   , TypeEnv
   , emptyEnv
-  , tySubst
+  , subst
+  , TScheme(..)
   , schemeOf
   ) where
 
@@ -35,7 +31,7 @@ import Control.Monad.State
 import Data.List
 import Data.Maybe
 import System.IO.Unsafe (unsafePerformIO)
-import Syntax
+import AST
 
 -------------------------------------------------------------------------------- Type system
 
@@ -46,32 +42,32 @@ instance Show TVar where
   show (TV name) = "t" ++ show name
 
 data Type
- = TCon Name
- | TVar TVar
- | TList Type
- | TPair [Type]
- | TArr [Type]
+ = TCon Name                    -- Constant
+ | TVar TVar                    -- Variable
+ | TLst Type                    -- List
+ | TTpl [Type]                  -- Tuple
+ | TArr [Type]                  -- Arror
  deriving (Eq, Ord)
 
 instance Show Type where
   show (TCon n) = n
   show (TVar t) = show t
-  show (TList l) = show [l]
-  show (TPair l) = "(" ++ intercalate ", " (map show l) ++ ")"
+  show (TLst l) = show [l]
+  show (TTpl l) = "(" ++ intercalate ", " (map show l) ++ ")"
   show (TArr l) = "(" ++ intercalate " -> " (map show l) ++ ")"
 
-typeInt :: Type
-typeInt = TCon "Int"
+pattern TInt :: Type
+pattern TInt = TCon "Int"
+pattern TBool :: Type
+pattern TBool = TCon "Bool"
+pattern TChar :: Type
+pattern TChar = TCon "Char"
+pattern TString :: Type
+pattern TString = TLst TChar
 
-typeBool :: Type
-typeBool = TCon "Bool"
-
-typeChar :: Type
-typeChar = TCon "Char"
-
--- x         => TScheme [TV 1] (TV 1)
--- f x = x   => TScheme [TV 1] (TArr [(TV 1), (TV 1)])
--- f x y = y => TScheme [TV 1, TV 2] (TArr [(TV 1), (TV 1), (TV 1)])
+-- x         => (TV x) : TScheme [TV 1] (TV 1)
+-- f x = x   => (TV f) : TScheme [TV 1] (TArr [(TV 1), (TV 1)])
+-- f x y = y => (TV f) : TScheme [TV 1, TV 2] (TArr [(TV 1), (TV 1), (TV 1)])
 data TScheme =
   TScheme { bounds  :: [TVar]
           , derived :: Type
@@ -111,8 +107,8 @@ class HasFreeVars s where
 instance HasFreeVars Type where
   freevars (TCon _)  = []
   freevars (TVar x)  = [x]
-  freevars (TList t) = freevars t
-  freevars (TPair l) = nub $ concatMap freevars l
+  freevars (TLst t) = freevars t
+  freevars (TTpl l) = nub $ concatMap freevars l
   freevars (TArr l)  =  nub $ concatMap freevars l
 
 instance HasFreeVars TScheme where
@@ -121,8 +117,6 @@ instance HasFreeVars TScheme where
 instance HasFreeVars VarMap where
   freevars e = nub $ concatMap (freevars .snd) (unEnv e)
 
-overlapped :: VarMap -> TScheme -> Bool
-overlapped e (TScheme vs _) = null $ intersect (freevars e)  vs
 
 -- | 型を型で置き換える型代入
 subst :: TypeEnv -> [(Type, Type)] -> TypeEnv
@@ -135,31 +129,23 @@ subst' e (TCon t1, TCon t2)
   | otherwise = Nothing
 subst' e (TVar tv@(TV _), t2) = tySubst e (tv, t2)
 subst' e (t1, TVar tv@(TV _)) = tySubst e (tv, t1)
-subst' e x = Nothing
+subst' _ _ = Nothing
 
 -- | 型変数を型で置き換える型代入
--- >>> t = VarMap [(Var "x", TScheme [] (TCon "Int")), (Var "y", TScheme [TV 1] (TVar (TV 1)))]
--- >>> tySubst t (TV 1, TCon "Int")
--- VarMap {unEnv = [(Var "x",TScheme [] (TCon "Int")),(Var "y",TScheme [] (TCon "Int"))]}
--- >>> tySubst t (TV 2, TCon "Int")
--- VarMap {unEnv = [(Var "x",TScheme [] (TCon "Int")),(Var "y",TScheme [TV 1] (TVar (TV 1)))]}
--- >>> tySubst t (TV 1, TV 2)
--- VarMap {unEnv = [(Var "x",TScheme [] (TCon "Int")),(Var "y",TScheme [TV 1] (TVar (TV 1)))]}
 tySubst :: TypeEnv -> TSubst -> TypeEnv
 tySubst e (tv, ty) = within (map shaper) <$> e
   where
     shaper (v, TScheme l t) = (v, TScheme (delete tv l) (lookdown t))
-      where lookdown :: Type -> Type
-            lookdown t'@(TCon _) = t'
-            lookdown t'@(TVar tv') = if tv' == tv then ty else t'
-            lookdown (TList t')    = TList (lookdown t')
-            lookdown (TPair l')    = TPair (map lookdown l')
-            lookdown (TArr l')     = TArr (map lookdown l')
+    lookdown :: Type -> Type
+    lookdown t'@(TCon _) = t'
+    lookdown t'@(TVar tv') = if tv' == tv then ty else t'
+    lookdown (TLst t')    = TLst (lookdown t')
+    lookdown (TTpl l')    = TTpl (map lookdown l')
+    lookdown (TArr l')     = TArr (map lookdown l')
 
 update :: TypeEnv -> ([Typing], [TSubst]) -> TypeEnv
 update e (tl, sl) = foldl tySubst (foldl extend e tl) sl
 
--- extend emptyEnv (Var "x", TScheme [] typeInt)
 emptyEnv :: TypeEnv
 emptyEnv = Just $ VarMap []
 
@@ -185,23 +171,23 @@ newTypeVar = do i <- (1 +) <$> get
 -- | 型環境e下における与えられた式の型を返す
 -- | 型環境は部分式の評価において更新されるため、更新された型環境も返す必要がある。
 infer :: TypeEnv -> Expr -> Infer (Type, TypeEnv)
-infer e (Lit (LInt _))    = return (TCon "Int", e)
-infer e (Lit (LBool _))   = return (TCon "Bool", e)
-infer e (Lit (LString _)) = return (TList (TCon "Char"), e)
+infer e (Lit (LInt _))    = return (TInt, e)
+infer e (Lit (LBool _))   = return (TBool, e)
+infer e (Lit (LString _)) = return (TString, e)
 infer e (Ref v@(Var n)) = case find ((v ==) . fst) . unEnv =<< e of
                             Just (_, TScheme _ t) -> return (t, e)
                             Nothing -> do t <- newTypeVar  -- t :: TVar
                                           let s = TScheme [t] (TVar t)
                                           return (TVar t, extend e (Var n, s))
 infer e (Pair ls) = do
-  let loop [] ts e' = return (TPair (reverse ts), e')
+  let loop [] ts e' = return (TTpl (reverse ts), e')
       loop (x:xs) ts e0 = do
         (t, e1) <- infer e0 x
         when (isNothing e1) $ throwError (UnificationFail x t t)
         loop xs (t:ts) e1
   loop ls [] e
 infer e xp@(List ls) = do
-  let loop [] t e' = return (TList t, e')
+  let loop [] t e' = return (TLst t, e')
       loop (x:xs) t e0 = do
         (t', e1) <- infer e0 x
         case unifier t t' of
@@ -216,12 +202,12 @@ infer e (Paren x) = infer e x
 infer e0 xp@(Op op x y)
   | elem op [Add, Sub, Mul]  = do
       (tx, e1) <- infer e0 x
-      let e2 = subst e1 [(tx, typeInt)]
-      when (isNothing e2) $ throwError (UnificationFail x tx typeInt)
+      let e2 = subst e1 [(tx, TInt)]
+      when (isNothing e2) $ throwError (UnificationFail x tx TInt)
       (ty, e3) <- infer e2 y
-      when (isNothing e3) $ throwError (UnificationFail y ty typeInt)
-      let e4 = subst e3 [(ty, typeInt)]
-      return (typeInt, e4)
+      when (isNothing e3) $ throwError (UnificationFail y ty TInt)
+      let e4 = subst e3 [(ty, TInt)]
+      return (TInt, e4)
   | elem op [Eql] = do
       (tx, e1) <- infer e0 x
       (ty, e2) <- infer e1 y
@@ -229,10 +215,26 @@ infer e0 xp@(Op op x y)
         Just u -> do
           let e3 = subst e2 [(tx, u), (ty, u)]
           when (isNothing e3) $ throwError (UnificationFail xp tx ty)
-          return (typeBool, e3)
+          return (TBool, e3)
         Nothing -> throwError (UnificationFail xp tx ty)
+infer e0 (Let v x1 x2) = do
+  (t1, e1) <- infer e0 x1                    -- x1の型からvはt1型である（自由変数が消えるようなunifyは不可）
+  (_ , e2) <- infer e1 x2                    -- 最初から自由変数がなければ消えたりはしない。
+  let (Just (TScheme _ tv)) = schemeOf e2 v  -- x2での型推論よりvの型はtvでなければならない
+  let (Just overlap) = not . null . intersect (tVarsIn t1) . freevars <$> e2   -- x1より束縛変数を求める
+  case (not overlap, unifier t1 tv) of
+    (True, Just u) -> do (tl, e3) <- infer (subst e2 [(tv, u), (t1, u)]) x2
+                         return (tl, within (filter ((v /=) . fst)) <$> e3)
+    _              -> throwError $ UnificationFail (Ref v) t1 tv
 
 infer _ x = throwError $ NotImplemented x
+
+tVarsIn :: Type -> [TVar]
+tVarsIn (TCon _) = []
+tVarsIn (TVar v) = [v]
+tVarsIn (TLst t) = tVarsIn t
+tVarsIn (TTpl l) = nub $ concatMap tVarsIn l
+tVarsIn (TArr l) = nub $ concatMap tVarsIn l
 
 -- TODO: add occurence checking
 unifier :: Type -> Type -> Maybe Type
@@ -245,12 +247,12 @@ unifier (TCon _) _ = Nothing
 unifier t1 t2@(TCon _) = unifier t2 t1
 -- Var
 unifier t1@(TVar _) (TVar _) = Just t1
-unifier (TVar _) t2@(TList _) = Just t2
-unifier (TVar _) t2@(TPair _) = Just t2
+unifier (TVar _) t2@(TLst _) = Just t2
+unifier (TVar _) t2@(TTpl _) = Just t2
 unifier (TVar _) t2@(TArr _) = Just t2
 unifier t1 t2@(TVar _) = unifier t2 t1
 -- Compound types
-unifier (TList t1) (TList t2) = TList <$> unifier t1 t2
-unifier (TPair l1) (TPair l2) = TArr <$> zipWithM unifier l1 l2
+unifier (TLst t1) (TLst t2) = TLst <$> unifier t1 t2
+unifier (TTpl l1) (TTpl l2) = TArr <$> zipWithM unifier l1 l2
 unifier (TArr l1) (TArr l2) = TArr <$> zipWithM unifier l1 l2
 unifier _ _ = Nothing

@@ -1,5 +1,5 @@
 module Parser
-  ( runHaskell
+  ( parseHaskell
   ) where
 
 import Data.Functor
@@ -7,14 +7,14 @@ import Data.List
 import Text.Parsec
 import qualified Text.Parsec.Token as P
 import Text.Parsec.Language (haskellDef)
-import Syntax
+import AST
 
-runHaskell :: String -> Either String Expr
-runHaskell str = case parse hLine "ERROR" str of
-                   Left err -> let -- l = lines str !! (sourceLine (errorPos err) - 2)
-                                   i = replicate (sourceColumn (errorPos err) -1) ' ' ++ "^\n"
-                               in Left $ str ++ i ++ show err
-                   Right x  -> Right x
+parseHaskell :: String -> Either String Expr
+parseHaskell str = case parse hLine "ERROR" str of
+                     Left err -> let l = lines str !! ((max (length (lines str)) (sourceLine (errorPos err) - 1)) -1)
+                                     i = replicate (sourceColumn (errorPos err) -1) ' ' ++ "^\n"
+                                 in Left $ l ++ i ++ show err
+                     Right x  -> Right x
 
 lexer       = P.makeTokenParser haskellDef
 parens      = P.parens lexer

@@ -1,4 +1,4 @@
-module Syntax
+module AST
   ( Expr(..)
   , Name
   , Lit(..)

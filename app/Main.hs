@@ -1,13 +1,13 @@
 module Main where
 
-import Syntax
+import AST
 import Parser
-import TypeInfer
+import Typing
 
 main :: IO ()
 main = do
   str <- getContents
-  case runHaskell str of
+  case parseHaskell str of
     Left err  -> putStrLn err
     Right exp -> case runInfer exp of
                       Right (t, Just e) -> putStrLn $ show exp ++ " :: " ++ show t ++ " -- " ++ show e
