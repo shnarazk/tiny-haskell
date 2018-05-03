@@ -141,7 +141,7 @@ tySubst e (tv, ty) = within (map shaper) <$> e
     lookdown t'@(TVar tv') = if tv' == tv then ty else t'
     lookdown (TLst t')    = TLst (lookdown t')
     lookdown (TTpl l')    = TTpl (map lookdown l')
-    lookdown (TArr l')     = TArr (map lookdown l')
+    lookdown (TArr l')    = TArr (map lookdown l')
 
 update :: TypeEnv -> ([Typing], [TSubst]) -> TypeEnv
 update e (tl, sl) = foldl tySubst (foldl extend e tl) sl
@@ -198,6 +198,21 @@ infer e xp@(List ls) = do
           Nothing -> throwError (UnificationFail xp t t')
   v <- newTypeVar
   loop ls (TVar v) e
+infer e0 xp@(App [Ref f, a]) = do
+  t0 <- newTypeVar
+  t1 <- newTypeVar
+  let s = TScheme [t0, t1] (TArr [TVar t0, TVar t1])
+      e1 = extend e0 (f, s)
+  (tf, e2) <- infer e1 (Ref f)
+  (ta, e3) <- infer e2 a
+  let (Just (TArr tt)) = (derived . snd) <$> (find ((f ==) . fst) . unEnv =<< e3)
+  case unifier (head tt) ta of
+    Just u -> do
+      let e4 = subst e3 [(head tt, u), (ta, u)]
+      when (isNothing e4) $ throwError (UnificationFail (Ref f) (head tt) ta)
+      return (TVar t1, e4)
+    Nothing -> throwError (UnificationFail (Ref f) (head tt) ta)
+
 infer e (Paren x) = infer e x
 infer e0 xp@(Op op x y)
   | elem op [Add, Sub, Mul]  = do

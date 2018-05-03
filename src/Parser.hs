@@ -23,13 +23,25 @@ brackets    = P.brackets lexer
 identifier  = P.identifier lexer
 integer     = P.integer lexer
 symbol      = P.symbol lexer
+operator    = P.operator lexer
 
 hLine :: Parsec String () Expr
 hLine = hExpr <* eof
 
-hExpr  = hLet <|> hExpr'  `chainl1` eqlop
+hExpr  = hExpr'  `chainl1` eqlop
 hExpr' = hTerm   `chainl1` addop
-hTerm  = hFactor `chainl1` mulop
+hTerm  = hAppl   `chainl1` mulop
+hAppl  = hFactor `chainl1` brank
+_hAppl  = do
+  l <- many1 (hLet <|> hVar <|> hLitInt <|> hParens <|> hList)
+  -- lookAhead (symbol "+")
+  -- lookAhead (operator <|> (eof $> "") <|> symbol "+")
+  case l of
+    [e] -> return e
+    l   -> return $ App l
+
+--  where f [e] = e
+--        f l   = App l
 
 eqlop :: Parsec String () (Expr -> Expr -> Expr)
 eqlop = symbol "==" $> Op Eql
@@ -41,19 +53,17 @@ addop :: Parsec String () (Expr -> Expr -> Expr)
 addop =   (symbol "+" $> Op Add)
       <|> (symbol "-" $> Op Sub)
 
-hVar = f <$> identifier
-  where f "False" = Lit (LBool False)
-        f "True"  = Lit (LBool True)
-        f str     = Ref (Var str)
+brank = notFollowedBy operator $> f
+  where f (App l) r = App $ l ++ [r]
+        f l r       = App $ [l, r]
 
-hLitInt = Lit . LInt . fromInteger <$> integer
+-- hFactor = hVar <|> hLitInt
+hFactor = hList <|> hParens <|> hLet <|> hVar <|> hLitInt
 
 hList = brackets $ List <$> sepBy hExpr (symbol ",")
 
 hParens = parens $ f <$> sepBy1 hExpr (symbol ",")
   where f l = if length l == 1 then Paren (head l) else Pair l
-
-hFactor =  hList <|> hParens <|> hVar <|> hLitInt
 
 hLet = do
   symbol "let"
@@ -65,3 +75,14 @@ hLet = do
   case e0 of
     Ref v -> return $ Let v e1 e2
     _     -> fail "invalid var to assign"
+
+hVar = f <$> identifier
+  where f "False" = Lit (LBool False)
+        f "True"  = Lit (LBool True)
+        f str     = Ref (Var str)
+
+hLitInt = Lit . LInt . fromInteger <$> integer
+
+hApplication = do
+  f <- hExpr
+  App . (f :) <$> many1 hExpr

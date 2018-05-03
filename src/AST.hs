@@ -18,26 +18,29 @@ type Name = String
 
 data Expr
   = Ref Var
-  | FA Var [Expr]               -- Function Application
 --  | App Expr Expr
   | Lit Lit
+  | App [Expr]               -- Function Application
   | List [Expr]
   | Pair [Expr]
   | Paren Expr
   | Op Binop Expr Expr
   | Let Var Expr Expr
   | NullExpr
-  deriving (Eq, Ord)
+  deriving (Eq, Ord, Show)
 
+{-
 instance Show Expr where
   show (Ref v) = show v
   show (Lit l) = show l
+  show (App l) = intercalate " " (map show l)
   show (List l) = "[" ++ intercalate ", " (map show l) ++ "]"
   show (Pair l) = "(" ++ intercalate ", " (map show l) ++ ")"
   show (Paren e) = "(" ++ show e ++ ")"
-  show (Op x e1 e2) = show e1 ++ " " ++ show x ++ " " ++ show e2
+  show (Op x e1 e2) = show e1 ++ " (" ++ show x ++ ") " ++ show e2
   show (Let v e1 e2) = "let " ++ show v ++ " = " ++ show e1 ++ " in " ++ show e2
   show NullExpr = "_|_"
+-}
 
 data Lit
   = LInt Int
@@ -71,4 +74,3 @@ data Program = Program [Decl] Expr
   deriving Eq
 
 type Decl = (String, Expr)
-
