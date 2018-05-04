@@ -179,7 +179,10 @@ infer (App xs) e0 = do
   (ts, e1) <- loop xs e0 []
   r2 <- TArr . (\v -> tail ts ++ [v]) . TVar <$> newTypeVar
   (TArr l, e2) <- infer (head xs) =<< unify (head xs) (head ts) r2 e1
-  return (last l, e2)
+  case drop (length xs - 1) l of
+    []  -> throwError $ UnificationFail (App xs) TUnit (TArr l)
+    [e] -> return (e, e2)
+    l   -> return  (TArr l, e2)
 infer (Paren x) e = infer x e
 infer xp@(Op op x y) e0
   | elem op [Add, Sub, Mul]  = do (tx, e1) <- infer x e0
@@ -225,8 +228,12 @@ unifier (TVar t1) t2@(TArr _) = Just [(t1, t2)]
 unifier t1 t2@(TVar _) = unifier t2 t1
 -- Compound types
 unifier (TLst t1) (TLst t2) = unifier t1 t2
-unifier (TTpl l1) (TTpl l2) = mconcat $ zipWith unifier l1 l2
-unifier (TArr l1) (TArr l2) = mconcat $ zipWith unifier l1 l2
+unifier (TTpl l1) (TTpl l2)
+  | length l1 == length l2 = mconcat $ zipWith unifier l1 l2
+  | otherwise = Nothing
+unifier (TArr l1) (TArr l2)
+  | length l1 == length l2 = mconcat $ zipWith unifier l1 l2
+  | otherwise = Nothing
 unifier _ _ = Nothing
 
 unify :: Expr -> Type -> Type -> TypeEnv -> Infer TypeEnv

@@ -1,3 +1,4 @@
+discord/DiscordSecret.hs
 PL-typechecker.cabal
 dist
 dist-*

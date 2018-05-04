@@ -16,7 +16,7 @@ import DiscordSecret (token)
 
 instance DiscordAuth IO where
   auth    = return $ Bot token
-  version = return "0.4.0"
+  version = return "0.5.0"
   runIO   = id
 
 data MnemonicHandler
@@ -30,9 +30,15 @@ instance EventMap MnemonicHandler (DiscordApp IO) where
                        , messageAuthor = User{userIsBot = bot, userId = uid}}
              )
     | bot = return ()
-    | ":t " `T.isPrefixOf` c = do
+    | ":p " `T.isPrefixOf` c = do
+        v <- ("-- version: " ++) <$> version
         let code = drop 3 (T.unpack c)
-            res = "<@" ++ show uid ++ ">, I did.\n```haskell\n" ++ typing code ++ "```"
+            res = "<@" ++ show uid ++ ">, I did. " ++ v ++ "\n```haskell\n" ++ parsing code ++ "```"
+        void $ doFetch $ CreateMessage ch (T.pack res) Nothing
+    | ":t " `T.isPrefixOf` c = do
+        v <- ("-- version: " ++) <$> version
+        let code = drop 3 (T.unpack c)
+            res = "<@" ++ show uid ++ ">, I did. " ++ v ++ "\n```haskell\n" ++ typing code ++ "```"
         void $ doFetch $ CreateMessage ch (T.pack res) Nothing
     | "!help" `T.isPrefixOf` c = do
         v <- ("version: " ++) <$> version
@@ -45,6 +51,12 @@ instance EventHandler TypeCheckApp IO
 
 main :: IO ()
 main = runBot (Proxy :: Proxy (IO TypeCheckApp))
+
+parsing :: String -> String
+parsing str =
+  case parseHaskell str of
+    Left err  -> err
+    Right exp -> show exp
 
 typing :: String -> String
 typing str =
