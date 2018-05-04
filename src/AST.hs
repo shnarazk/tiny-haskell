@@ -4,6 +4,7 @@ module AST
   , Lit(..)
   , Var(..)
   , Binop(..)
+  , PrettyPrint(..)
   ) where
 
 import Data.Functor
@@ -29,46 +30,47 @@ data Expr
   | NullExpr
   deriving (Eq, Ord, Show)
 
-{-
-instance Show Expr where
-  show (Ref v) = show v
-  show (Lit l) = show l
-  show (App l) = intercalate " " (map show l)
-  show (List l) = "[" ++ intercalate ", " (map show l) ++ "]"
-  show (Pair l) = "(" ++ intercalate ", " (map show l) ++ ")"
-  show (Paren e) = "(" ++ show e ++ ")"
-  show (Op x e1 e2) = show e1 ++ " (" ++ show x ++ ") " ++ show e2
-  show (Let v e1 e2) = "let " ++ show v ++ " = " ++ show e1 ++ " in " ++ show e2
-  show NullExpr = "_|_"
--}
+class PrettyPrint s where
+  prettyPrint :: s -> String
+
+instance PrettyPrint Expr where
+  prettyPrint (Ref v) = prettyPrint v
+  prettyPrint (Lit l) = prettyPrint l
+  prettyPrint (App l) = intercalate " " (map prettyPrint l)
+  prettyPrint (List l) = "[" ++ intercalate ", " (map prettyPrint l) ++ "]"
+  prettyPrint (Pair l) = "(" ++ intercalate ", " (map prettyPrint l) ++ ")"
+  prettyPrint (Paren e) = "(" ++ prettyPrint e ++ ")"
+  prettyPrint (Op x e1 e2) = " (" ++ prettyPrint e1 ++ " " ++ prettyPrint x ++ " " ++ prettyPrint e2 ++ ") "
+  prettyPrint (Let v e1 e2) = "let " ++ prettyPrint v ++ " = " ++ prettyPrint e1 ++ " in " ++ prettyPrint e2
+  prettyPrint NullExpr = "_|_"
 
 data Lit
   = LInt Int
   | LBool Bool
   | LString String
   | LFunc String
-  deriving (Eq, Ord)
+  deriving (Eq, Ord, Show)
 
-instance Show Lit where
-  show (LInt n) = show n
-  show (LBool b) = show b
-  show (LString s) = s
-  show (LFunc f) = f
+instance PrettyPrint Lit where
+  prettyPrint (LInt n) = show n
+  prettyPrint (LBool b) = show b
+  prettyPrint (LString s) = s
+  prettyPrint (LFunc f) = f
 
 data Var = Var Name
-  deriving (Eq, Ord)
+  deriving (Eq, Ord, Show)
 
-instance Show Var where
-  show (Var name) = name
+instance PrettyPrint Var where
+  prettyPrint (Var name) = name
 
 data Binop = Add | Sub | Mul | Eql
-  deriving (Eq, Ord)
+  deriving (Eq, Ord, Show)
 
-instance Show Binop where
-  show Add = "+"
-  show Sub = "-"
-  show Mul = "*"
-  show Eql = "=="
+instance PrettyPrint Binop where
+  prettyPrint Add = "+"
+  prettyPrint Sub = "-"
+  prettyPrint Mul = "*"
+  prettyPrint Eql = "=="
 
 data Program = Program [Decl] Expr
   deriving Eq

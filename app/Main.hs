@@ -6,10 +6,11 @@ import Typing
 
 main :: IO ()
 main = do
-  str <- getContents
+  str <- init <$> getContents
   case parseHaskell str of
     Left err  -> putStrLn err
     Right exp -> case runInfer exp of
-                      Right (t, Just e) -> putStrLn $ show exp ++ " :: " ++ show t ++ " -- " ++ show e
-                      Right (t, Nothing) -> putStrLn $ show exp ++ " :: " ++ show t ++ " -- empty env"
-                      Left e -> putStrLn $ show exp ++ " => Error: " ++ show e
+                   Right (t, Just e) -> putStrLn $ str ++ " :: " ++ show t ++ " -- " ++ show e
+                   Right (t, Nothing) -> putStrLn $ str ++ " :: " ++ show t ++ " -- empty env"
+                   Left e -> putStrLn $ str ++ " => Error: " ++ show e ++ "\n;;; The abstruct syntax tree of '" ++ str ++ "'\n" ++ show exp
+
