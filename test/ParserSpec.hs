@@ -13,3 +13,4 @@ spec = do
           Left a'  -> it ("\n" ++ a') $  NullExpr `shouldBe` a
   describe "Parse basic syntax" $ mapM_ run targets
   describe "Function Application" $ mapM_ run funApps
+  describe "Infinite looping" $ mapM_ run infinites

@@ -26,3 +26,4 @@ spec = do
         x -> error (show x)
   describe "Basic Inferences" $ mapM_ run targets
   describe "Function applications" $ mapM_ run funApps
+  describe "Infinite looping" $ mapM_ run infinites

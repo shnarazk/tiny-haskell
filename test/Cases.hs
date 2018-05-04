@@ -1,4 +1,4 @@
-module Cases ( tenv, targets, funApps ) where
+module Cases ( tenv, errors, infinites, targets, funApps ) where
 
 import AST
 import Typing
@@ -17,6 +17,20 @@ errors' =
    ( "*"
     , NullExpr
     , Right TInt
+    )
+  ]
+
+infinites :: [Instance]
+infinites = zipWith (\i (s, a, t) -> (i, s, a, t)) [1..] infinites'
+infinites' =
+  [
+    ( "f f == f"
+    , Op Eql (App [Ref (Var "f"),Ref (Var "f")]) (Ref (Var "f"))
+    , Left (InfiniteType (Ref (Var "f")) (TV 1) (TArr [TVar (TV 1), TVar (TV 2)]))
+    )
+  , ( "f == f f"
+    , Op Eql (Ref (Var "f")) (App [Ref (Var "f"), Ref (Var "f")])
+    , Left (InfiniteType (Ref (Var "f")) (TV 1) (TArr [TVar (TV 1), TVar (TV 2)]))
     )
   ]
 

@@ -139,7 +139,7 @@ emptyEnv = Just $ VarMap []
 
 data TypeError
   = UnificationFail Expr Type Type
-  | InfiniteType TVar Expr Type
+  | InfiniteType Expr TVar Type
   | UnboundVariable Expr String
   | NotImplemented Expr
   deriving (Eq, Show)
@@ -211,7 +211,6 @@ tVarsIn (TLst t) = tVarsIn t
 tVarsIn (TTpl l) = nub $ concatMap tVarsIn l
 tVarsIn (TArr l) = nub $ concatMap tVarsIn l
 
--- TODO: add occurence checking
 unifier :: Type -> Type -> Maybe [TSubst]
 -- Constant
 unifier t1@(TCon _) t2@(TCon _)
@@ -237,7 +236,15 @@ unifier (TArr l1) (TArr l2)
 unifier _ _ = Nothing
 
 unify :: Expr -> Type -> Type -> TypeEnv -> Infer TypeEnv
-unify x t t' e =
-  case unifier t t' of
-    Just u -> return $ subst e u
-    Nothing -> throwError (UnificationFail x t t')
+unify x t t' e
+  | TVar v <- t, occurrenceCheck v t' = throwError (InfiniteType x v t')
+  | otherwise =
+    case unifier t t' of
+      Just u -> return $ subst e u
+      Nothing -> throwError (UnificationFail x t t')
+
+occurrenceCheck :: TVar -> Type -> Bool
+occurrenceCheck t1 t2@(TLst _) = elem t1 (freevars t2)
+occurrenceCheck t1 t2@(TTpl _) = elem t1 (freevars t2)
+occurrenceCheck t1 t2@(TArr _) = elem t1 (freevars t2)
+occurrenceCheck _ _ = False
