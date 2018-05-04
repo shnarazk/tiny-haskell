@@ -16,7 +16,7 @@ import DiscordSecret (token)
 
 instance DiscordAuth IO where
   auth    = return $ Bot token
-  version = return "0.3.1"
+  version = return "0.3.2"
   runIO   = id
 
 data MnemonicHandler
@@ -32,7 +32,7 @@ instance EventMap MnemonicHandler (DiscordApp IO) where
     | bot = return ()
     | ":t " `T.isPrefixOf` c = do
         let code = drop 3 (T.unpack c)
-            res = "<@" ++ show uid ++ ">, I did.\n```hasskell\n" ++ typing code ++ "```"
+            res = "<@" ++ show uid ++ ">, I did.\n```haskell\n" ++ typing code ++ "```"
         void $ doFetch $ CreateMessage ch (T.pack res) Nothing
     | "!help" `T.isPrefixOf` c = do
         v <- ("version: " ++) <$> version
@@ -51,6 +51,6 @@ typing str =
   case parseHaskell str of
     Left err  -> err
     Right exp -> case runInfer exp of
-                   Right (t, Just e)  -> show exp ++ " :: " ++ show t ++ " -- " ++ show e
-                   Right (t, Nothing) -> show exp ++ " :: " ++ show t ++ " -- empty env"
-                   Left e             -> show exp ++ " => Error: " ++ show e
+                   Right (t, Just e)  -> str ++ " :: " ++ show t ++ " -- " ++ show e
+                   Right (t, Nothing) -> str ++ " :: " ++ show t ++ " -- empty env"
+                   Left e             -> str ++ " => Error: " ++ show e ++ "\nAST:" ++ show exp
