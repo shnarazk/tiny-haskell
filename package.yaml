@@ -53,7 +53,6 @@ executables:
           buildable:     true
         else:
           buildable:     false
-    buildable:
     dependencies:
       - PL-typechecker
       - discord-hs
