@@ -84,7 +84,7 @@ funApps' =
     )
   , ( "f 1 True"
     , App [Ref (Var "f"),  Lit (LInt 1), Lit (LBool True)]
-    , Left (NotImplemented (App [Ref (Var "f"),Lit (LInt 1) ,Lit (LBool True)]))
+    , Right (TVar (TV 2))
     )
   , ( "x + 3"
     , Op Add (Ref (Var "x")) (Lit (LInt 3))

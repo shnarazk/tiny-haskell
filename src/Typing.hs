@@ -14,7 +14,7 @@ module Typing
   , infer
     -- * Testing
   , TVar(..)
-  , Type(..,TBool,TInt,TChar,TString)
+  , Type(.., TBool, TInt, TChar, TString, TUnit)
   , VarMap(..)
   , TypeEnv
   , emptyEnv
@@ -64,6 +64,8 @@ pattern TChar :: Type
 pattern TChar = TCon "Char"
 pattern TString :: Type
 pattern TString = TLst TChar
+pattern TUnit :: Type
+pattern TUnit = TCon "()"
 
 -- x         => (TV x) : TScheme [TV 1] (TV 1)
 -- f x = x   => (TV f) : TScheme [TV 1] (TArr [(TV 1), (TV 1)])
@@ -129,7 +131,9 @@ subst' e (TCon t1, TCon t2)
   | otherwise = Nothing
 subst' e (TVar tv@(TV _), t2) = tySubst e (tv, t2)
 subst' e (t1, TVar tv@(TV _)) = tySubst e (tv, t1)
-subst' _ _ = Nothing
+subst' e (t1, t2)
+  | t1 == t2 = e
+  | otherwise = Nothing
 
 -- | 型変数を型で置き換える型代入
 tySubst :: TypeEnv -> TSubst -> TypeEnv
@@ -198,21 +202,35 @@ infer e xp@(List ls) = do
           Nothing -> throwError (UnificationFail xp t t')
   v <- newTypeVar
   loop ls (TVar v) e
-infer e0 xp@(App [Ref f, a]) = do
-  t0 <- newTypeVar
-  t1 <- newTypeVar
-  let s = TScheme [t0, t1] (TArr [TVar t0, TVar t1])
-      e1 = extend e0 (f, s)
-  (tf, e2) <- infer e1 (Ref f)
-  (ta, e3) <- infer e2 a
-  let (Just (TArr tt)) = (derived . snd) <$> (find ((f ==) . fst) . unEnv =<< e3)
-  case unifier (head tt) ta of
-    Just u -> do
-      let e4 = subst e3 [(head tt, u), (ta, u)]
-      when (isNothing e4) $ throwError (UnificationFail (Ref f) (head tt) ta)
-      return (TVar t1, e4)
-    Nothing -> throwError (UnificationFail (Ref f) (head tt) ta)
-
+infer e0 (App xs) = do
+  let loop []    e ts = return (reverse ts, e)
+      loop (a:l) e ts = do (t', e') <- infer e a
+                           loop l e' (t' : ts)
+  (ts, e1) <- loop xs e0 []
+  r2 <- TArr . (\v -> tail ts ++ [v]) . TVar <$> newTypeVar
+  let r1 = head ts
+  let Just e2 = (\u -> subst e1 [(r1, u), (r2, u)]) <$> unifier r1 r2
+  i <- infer e2 (head xs)
+  case i of
+    (TArr l, e3) -> return (last l, e3)
+    _            -> throwError (UnificationFail (head xs) r1 r2)
+{-
+infer e0 (App (Ref f : as)) = do
+  tvs <- mapM (const newTypeVar) (Ref f : as)
+  let fs = TScheme tvs (TArr (map TVar tvs))             -- scheme of f
+      loop []    e ts = return (reverse ts, e)
+      loop (a:l) e ts = do (t', e') <- infer e a
+                           loop l e' (t' : ts)
+  (tps, e2) <- loop as (extend e0 (f, fs)) []            -- type of parameters
+  let Just (TArr tt) = derived <$> schemeOf e2 f         -- types of f
+      unify :: VarMap -> (Type, Type) -> Maybe VarMap
+      unify m p = (\u -> subst (Just m) [(fst p, u), (snd p, u)]) =<< uncurry unifier p
+      e3 = foldM unify (fromJust e2) (zip (init tt) tps) -- init for stripping the return value
+  case e3 of
+    Just _  -> let Just (TArr tr) = derived <$> schemeOf e3 f
+               in return (last tr, e3)
+    Nothing -> throwError (UnificationFail (Ref f) (TArr tt) (TArr tps))
+-}
 infer e (Paren x) = infer e x
 infer e0 xp@(Op op x y)
   | elem op [Add, Sub, Mul]  = do
