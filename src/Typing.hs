@@ -119,25 +119,12 @@ instance HasFreeVars TScheme where
 instance HasFreeVars VarMap where
   freevars e = nub $ concatMap (freevars .snd) (unEnv e)
 
-
--- | 型を型で置き換える型代入
-subst :: TypeEnv -> [(Type, Type)] -> TypeEnv
-subst e l = foldl subst' e l
-
-subst' :: TypeEnv -> (Type, Type) -> TypeEnv
-subst' Nothing _ = Nothing
-subst' e (TCon t1, TCon t2)
-  | t1 == t2 = e
-  | otherwise = Nothing
-subst' e (TVar tv@(TV _), t2) = tySubst e (tv, t2)
-subst' e (t1, TVar tv@(TV _)) = tySubst e (tv, t1)
-subst' e (t1, t2)
-  | t1 == t2 = e
-  | otherwise = Nothing
-
 -- | 型変数を型で置き換える型代入
-tySubst :: TypeEnv -> TSubst -> TypeEnv
-tySubst e (tv, ty) = within (map shaper) <$> e
+subst :: TypeEnv -> [TSubst] -> TypeEnv
+subst e l = foldl subst1 e l
+
+subst1 :: TypeEnv -> TSubst -> TypeEnv
+subst1 e (tv, ty) = within (map shaper) <$> e
   where
     shaper (v, TScheme l t) = (v, TScheme (delete tv l) (lookdown t))
     lookdown :: Type -> Type
@@ -146,9 +133,6 @@ tySubst e (tv, ty) = within (map shaper) <$> e
     lookdown (TLst t')    = TLst (lookdown t')
     lookdown (TTpl l')    = TTpl (map lookdown l')
     lookdown (TArr l')    = TArr (map lookdown l')
-
-update :: TypeEnv -> [TSubst] -> TypeEnv
-update e l = foldl tySubst e l
 
 emptyEnv :: TypeEnv
 emptyEnv = Just $ VarMap []
@@ -187,7 +171,6 @@ infer e (Pair ls) = do
   let loop [] ts e' = return (TTpl (reverse ts), e')
       loop (x:xs) ts e0 = do
         (t, e1) <- infer e0 x
-        when (isNothing e1) $ throwError (UnificationFail x t t)
         loop xs (t:ts) e1
   loop ls [] e
 infer e xp@(List ls) = do
@@ -196,8 +179,7 @@ infer e xp@(List ls) = do
         (t', e1) <- infer e0 x
         case unifier t t' of
           Just u -> do
-            let e2 = update e1 u
-            when (isNothing e2) $ throwError (UnificationFail xp t t')
+            let e2 = subst e1 u
             (t1, _) <- infer e2 x
             loop xs t1 e2
           Nothing -> throwError (UnificationFail xp t t')
@@ -211,42 +193,28 @@ infer e0 (App xs) = do
   r2 <- TArr . (\v -> tail ts ++ [v]) . TVar <$> newTypeVar
   let r1 = head ts
   case unifier r1 r2 of
-    Just u  -> do let e2 = update e1 u
+    Just u  -> do let e2 = subst e1 u
                   (ret, e3) <- infer e2 (head xs)
                   case ret of
                     TArr l -> return (last l, e3)
                     _      -> return (ret, e3)
-    Nothing -> error ("aa" ++ show (head xs, r1, r2, unifier r1 r2)) -- throwError (UnificationFail (head xs) r1 r2)
+    Nothing -> throwError (UnificationFail (head xs) r1 r2)
 infer e (Paren x) = infer e x
 infer e0 xp@(Op op x y)
   | elem op [Add, Sub, Mul]  = do
       (tx, e1) <- infer e0 x
       case unifier tx TInt of
-        Just u -> do let e2 = update e1 u
+        Just u -> do let e2 = subst e1 u
                      (ty, e3) <- infer e2 y
                      case unifier ty TInt of
-                       Just w -> do let e4 = update e3 w
-                                    when (isNothing e4) $ error ("aaaa" ++ show (e2, e3, y, ty, w))
-                                    -- (Just E{x :: (Int -> Int)},Nothing,App [Ref x,Lit 60],t4,Int)
-                                    return (TInt, e4)
+                       Just w -> return (TInt, subst e3 w)
                        Nothing -> throwError (UnificationFail y ty TInt)
         Nothing -> throwError (UnificationFail x tx TInt)
-{-
-      let e2 = subst e1 [(tx, TInt)]
-      when (isNothing e2) $ error (show (e0, tx, unifier tx TInt, e2)) -- throwError (UnificationFail xp tx TInt)
-      (ty, e3) <- infer e2 y
-      let e4 = subst e3 [(ty, TInt)]
-      when (isNothing e4) $ error (show (e2, ty, unifier ty TInt, e3)) -- throwError (UnificationFail xp ty TInt)
-      return (TInt, e4)
--}
   | elem op [Eql] = do
       (tx, e1) <- infer e0 x
       (ty, e2) <- infer e1 y
       case unifier tx ty of
-        Just u -> do
-          let e3 = update e2 u
-          when (isNothing e3) $ throwError (UnificationFail xp tx ty)
-          return (TBool, e3)
+        Just u -> return (TBool, subst e2 u)
         Nothing -> throwError (UnificationFail xp tx ty)
   | otherwise = throwError (UnificationFail xp TUnit TUnit)
 infer e0 (Let v x1 x2) = do
@@ -255,7 +223,7 @@ infer e0 (Let v x1 x2) = do
   let (Just (TScheme _ tv)) = schemeOf e2 v  -- x2での型推論よりvの型はtvでなければならない
   let (Just overlap) = not . null . intersect (tVarsIn t1) . freevars <$> e2   -- x1より束縛変数を求める
   case (not overlap, unifier t1 tv) of
-    (True, Just u) -> do (tl, e3) <- infer (update e2 u) x2
+    (True, Just u) -> do (tl, e3) <- infer (subst e2 u) x2
                          return (tl, within (filter ((v /=) . fst)) <$> e3)
     _              -> throwError $ UnificationFail (Ref v) t1 tv
 
@@ -285,28 +253,6 @@ unifier (TVar t1) t2@(TArr _) = Just [(t1, t2)]
 unifier t1 t2@(TVar _) = unifier t2 t1
 -- Compound types
 unifier (TLst t1) (TLst t2) = unifier t1 t2
-unifier (TTpl l1) (TTpl l2) = mconcat $ zipWith unifier l1 l2 -- TArr <$> zipWithM unifier l1 l2
-unifier (TArr l1) (TArr l2) = mconcat $ zipWith unifier l1 l2 -- TArr <$> zipWithM unifier l1 l2
+unifier (TTpl l1) (TTpl l2) = mconcat $ zipWith unifier l1 l2
+unifier (TArr l1) (TArr l2) = mconcat $ zipWith unifier l1 l2
 unifier _ _ = Nothing
-{-
--- TODO: add occurence checking
-unifier :: Type -> Type -> Maybe Type
--- Constant
-unifier t1@(TCon _) t2@(TCon _)
-  | t1 == t2 = Just t1
-  | otherwise = Nothing
-unifier t@(TCon _) (TVar _) = Just t
-unifier (TCon _) _ = Nothing
-unifier t1 t2@(TCon _) = unifier t2 t1
--- Var
-unifier t1@(TVar _) (TVar _) = Just t1
-unifier (TVar _) t2@(TLst _) = Just t2
-unifier (TVar _) t2@(TTpl _) = Just t2
-unifier (TVar _) t2@(TArr _) = Just t2
-unifier t1 t2@(TVar _) = unifier t2 t1
--- Compound types
-unifier (TLst t1) (TLst t2) = TLst <$> unifier t1 t2
-unifier (TTpl l1) (TTpl l2) = TArr <$> zipWithM unifier l1 l2
-unifier (TArr l1) (TArr l2) = TArr <$> zipWithM unifier l1 l2
-unifier _ _ = Nothing
--}
