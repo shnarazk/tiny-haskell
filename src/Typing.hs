@@ -214,23 +214,6 @@ infer e0 (App xs) = do
   case i of
     (TArr l, e3) -> return (last l, e3)
     _            -> throwError (UnificationFail (head xs) r1 r2)
-{-
-infer e0 (App (Ref f : as)) = do
-  tvs <- mapM (const newTypeVar) (Ref f : as)
-  let fs = TScheme tvs (TArr (map TVar tvs))             -- scheme of f
-      loop []    e ts = return (reverse ts, e)
-      loop (a:l) e ts = do (t', e') <- infer e a
-                           loop l e' (t' : ts)
-  (tps, e2) <- loop as (extend e0 (f, fs)) []            -- type of parameters
-  let Just (TArr tt) = derived <$> schemeOf e2 f         -- types of f
-      unify :: VarMap -> (Type, Type) -> Maybe VarMap
-      unify m p = (\u -> subst (Just m) [(fst p, u), (snd p, u)]) =<< uncurry unifier p
-      e3 = foldM unify (fromJust e2) (zip (init tt) tps) -- init for stripping the return value
-  case e3 of
-    Just _  -> let Just (TArr tr) = derived <$> schemeOf e3 f
-               in return (last tr, e3)
-    Nothing -> throwError (UnificationFail (Ref f) (TArr tt) (TArr tps))
--}
 infer e (Paren x) = infer e x
 infer e0 xp@(Op op x y)
   | elem op [Add, Sub, Mul]  = do
