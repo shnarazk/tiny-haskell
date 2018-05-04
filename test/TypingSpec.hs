@@ -23,5 +23,6 @@ spec = do
         (Left e', _)                   -> it (s ++ " \t=> " ++ show e') $ Left e' `shouldBe` r
         (Right (t', Just e'), Right t) -> it (s ++ " :: " ++ show t' ++ " \t -- " ++ show e') $ t' `shouldBe` t
         (Right (t', Just e'), _)       -> it (s ++ " :: " ++ show t' ++ " \t -- " ++ show e') $  Right t' `shouldBe` r
+        x -> error (show x)
   describe "Basic Inferences" $ mapM_ run targets
   describe "Function applications" $ mapM_ run funApps

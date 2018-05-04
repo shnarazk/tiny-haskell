@@ -98,4 +98,12 @@ funApps' =
     , Op Mul (App [Ref (Var "x"), Lit (LInt 5)]) (App [Ref (Var "y"), Lit (LInt 5)])
     , Right TInt
     )
+  , ( "x 6 * x 60"
+    , Op Mul (App [Ref (Var "x"), Lit (LInt 6)]) (App [Ref (Var "x"), Lit (LInt 60)])
+    , Right TInt
+    )
+--  , ( "x 7 * x True"
+--    , Op Mul (App [Ref (Var "x"), Lit (LInt 7)]) (App [Ref (Var "x"), Lit (LBool True)])
+--    , Left (UnificationFail NullExpr (TArr [TInt, TInt]) (TArr [TBool, TVar (TV 3)]))
+--    )
   ]
