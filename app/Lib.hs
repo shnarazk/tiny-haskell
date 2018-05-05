@@ -16,5 +16,5 @@ typing str =
   case parseHaskell str of
     Left err  -> err
     Right exp -> case inferExpr exp of
-                   Right (t, e)  -> str ++ " :: " ++ prettyPrint t ++ " -- " ++ prettyPrint (shadow haskellEnv e)
+                   Right (t, e)  -> str ++ " :: " ++ prettyPrint t ++ "\t -- in " ++ prettyPrint (shadow haskellEnv e)
                    Left e -> str ++ " => Error: " ++ prettyPrint e ++ "\n;;; The abstruct syntax tree of `" ++ str ++ "`\n" ++ show exp
