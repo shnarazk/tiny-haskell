@@ -179,6 +179,8 @@ instance PrettyPrint TypeError where
     "The expression `" ++ prettyPrint e ++ " :: " ++ prettyPrint v ++ "` has an infinite type `" ++ prettyPrint t ++ "`."
   prettyPrint (UnboundVariable e v) =
     "The expression `" ++ prettyPrint e ++ "` contains an unbound variable `" ++ show v ++ "`."
+  prettyPrint (NotImplemented e) =
+    "Sorry, we can't yet handle the expression `" ++ prettyPrint e ++ "`."
 
 -- | 型を一致させる型代入を求める
 -- なければ例外を起こす
