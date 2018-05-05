@@ -62,7 +62,6 @@ typing :: String -> String
 typing str =
   case parseHaskell str of
     Left err  -> err
-    Right exp -> case runInfer exp of
-                   Right (t, Just e)  -> str ++ " :: " ++ show t ++ " -- " ++ show e
-                   Right (t, Nothing) -> str ++ " :: " ++ show t ++ " -- empty env"
-                   Left e             -> str ++ " => Error: " ++ show e ++ "\nAST:" ++ show exp
+    Right exp -> case inferExpr exp of
+                   Right (t, e)  -> str ++ " :: " ++ show t ++ " -- " ++ show e
+                   Left e        -> str ++ " => Error: " ++ show e ++ "\nAST:" ++ show exp

@@ -3,6 +3,7 @@
   , PatternSynonyms
   , TupleSections
   , TypeSynonymInstances
+  , ViewPatterns
   #-}
 -- http://dev.stephendiehl.com/fun/006_hindley_milner.html
 -- https://github.com/sdiehl/write-you-a-haskell/blob/master/chapter7/poly/src/Infer.hs
@@ -107,7 +108,9 @@ instance Functor Tagged where
 type TypeEnv = Tagged [Typing]
 
 instance Show TypeEnv where
-  show env = "E{" ++ intercalate ", " (map f (sort (unEnv env))) ++ "}"
+  show (unEnv -> env)
+    | null env = "EmptyEnviroment"
+    | otherwise = "E{" ++ intercalate ", " (map f (sort env)) ++ "}"
     where f (v, TScheme [] t) = show v ++ " :: " ++ show t
           f (v, s) = show v ++ " :: " ++ show s
 

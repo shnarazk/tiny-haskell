@@ -44,9 +44,9 @@ executables:
     - -with-rtsopts=-N
     dependencies:
     - PL-typechecker
-  TypeCheck-bot:
+  TinyHaskell-bot:
     source-dirs:         discord
-    main:                TC-bot.hs
+    main:                TinyHaskell-bot.hs
     when:
       - condition:       flag(bot)
         then:
