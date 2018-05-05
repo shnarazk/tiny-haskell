@@ -9,8 +9,7 @@ main = do
   str <- init <$> getContents
   case parseHaskell str of
     Left err  -> putStrLn err
-    Right exp -> case runInfer exp of
-                   Right (t, Just e) -> putStrLn $ str ++ " :: " ++ show t ++ " -- " ++ show e
-                   Right (t, Nothing) -> putStrLn $ str ++ " :: " ++ show t ++ " -- empty env"
+    Right exp -> case inferExpr exp of
+                   Right (t, e) -> putStrLn $ str ++ " :: " ++ show t ++ " -- " ++ show (shadow haskellEnv e)
                    Left e -> putStrLn $ str ++ " => Error: " ++ show e ++ "\n;;; The abstruct syntax tree of '" ++ str ++ "'\n" ++ show exp
 

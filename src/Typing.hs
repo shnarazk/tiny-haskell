@@ -10,15 +10,16 @@
 
 module Typing
   ( TypeError(..)
-  , runInfer
-  , infer
+  , inferExpr
     -- * Testing
   , TVar(..)
   , Type(.., TBool, TInt, TChar, TString, TUnit)
   , VarMap(..)
   , TypeEnv
   , emptyEnv
+  , haskellEnv
   , subst
+  , shadow
   , TScheme(..)
   , schemeOf
   ) where
@@ -83,6 +84,7 @@ instance Show TScheme where
 type Typing = (Var, TScheme)
 type TSubst = (TVar, Type)      -- 型代入
 
+-------------------------------------------------------------------------------- TypeEnv
 newtype VarMap = VarMap { unEnv :: [Typing] }
   deriving (Eq, Ord)
 
@@ -91,10 +93,10 @@ instance Show VarMap where
     where f (v, TScheme [] t) = show v ++ " :: " ++ show t
           f (v, s) = show v ++ " :: " ++ show s
 
+type TypeEnv = Maybe VarMap
+
 within :: ([Typing] -> [Typing]) -> VarMap -> VarMap
 within f (VarMap m) = VarMap $ f m
-
-type TypeEnv = Maybe VarMap
 
 schemeOf :: TypeEnv -> Var -> Maybe TScheme
 schemeOf Nothing _ = Nothing
@@ -102,6 +104,22 @@ schemeOf (Just e) v = snd <$> find ((v ==) . fst) (unEnv e)
 
 extend :: TypeEnv -> Typing -> TypeEnv
 extend e (x, s) = within ((x, s) :) <$> e
+
+shadow :: TypeEnv -> TypeEnv -> TypeEnv
+shadow (Just to) from = within (\\ unEnv to) <$> from
+
+emptyEnv :: TypeEnv
+emptyEnv = Just $ VarMap []
+
+haskellEnv :: TypeEnv
+haskellEnv = foldl extend emptyEnv predefined
+  where
+    def :: String -> [Type] -> Typing
+    def name tl = (Var name, TScheme [] (TArr tl))
+    predefined = [ def "div" [TInt, TInt, TInt]
+                 , def "mod" [TInt, TInt, TInt]
+                 , def "not" [TBool, TBool]
+                 ]
 
 class HasFreeVars s where
   freevars :: s -> [TVar]
@@ -134,9 +152,6 @@ subst1 e (tv, ty) = within (map shaper) <$> e
     lookdown (TTpl l')    = TTpl (map lookdown l')
     lookdown (TArr l')    = TArr (map lookdown l')
 
-emptyEnv :: TypeEnv
-emptyEnv = Just $ VarMap []
-
 data TypeError
   = UnificationFail Expr Type Type
   | InfiniteType Expr TVar Type
@@ -148,8 +163,8 @@ type InferResult = Either TypeError (Type, TypeEnv)
 
 type Infer a = StateT Int (ExceptT TypeError Identity) a
 
-runInfer :: Expr -> InferResult
-runInfer e = runIdentity $ runExceptT (evalStateT (infer e emptyEnv) 0)
+inferExpr :: Expr -> InferResult
+inferExpr e = runIdentity $ runExceptT (evalStateT (infer e haskellEnv) 0)
 
 newTypeVar :: Infer TVar
 newTypeVar = do { i <- (1 +) <$> get; put i; return $ TV i }
