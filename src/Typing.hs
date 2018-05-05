@@ -37,10 +37,10 @@ class HasFreeVars s where
   freevars :: s -> [TVar]
 
 newtype TVar = TV Int
-  deriving (Eq, Ord)
+  deriving (Eq, Ord, Show)
 
-instance Show TVar where
-  show (TV name) = "t" ++ show name
+instance PrettyPrint TVar where
+  prettyPrint (TV name) = "t" ++ show name
 
 data Type
  = TCon Name                    -- Constant
@@ -48,14 +48,14 @@ data Type
  | TLst Type                    -- List
  | TTpl [Type]                  -- Tuple
  | TArr [Type]                  -- Arror
- deriving (Eq, Ord)
+ deriving (Eq, Ord, Show)
 
-instance Show Type where
-  show (TCon n) = n
-  show (TVar t) = show t
-  show (TLst l) = show [l]
-  show (TTpl l) = "(" ++ intercalate ", " (map show l) ++ ")"
-  show (TArr l) = "(" ++ intercalate " -> " (map show l) ++ ")"
+instance PrettyPrint Type where
+  prettyPrint (TCon n) = n
+  prettyPrint (TVar t) = prettyPrint t
+  prettyPrint (TLst l) = "[" ++ prettyPrint l ++ "]"
+  prettyPrint (TTpl l) = "(" ++ intercalate ", " (map prettyPrint l) ++ ")"
+  prettyPrint (TArr l) = "(" ++ intercalate " -> " (map prettyPrint l) ++ ")"
 
 instance HasFreeVars Type where
   freevars (TCon _)  = []
@@ -89,30 +89,32 @@ data TScheme =
   TScheme { bounds  :: [TVar]
           , derived :: Type
           }
-  deriving (Eq, Ord)
+  deriving (Eq, Ord, Show)
 
 instance HasFreeVars TScheme where
   freevars (TScheme tl t) = freevars t \\ tl
 
-instance Show TScheme where
-  show (TScheme [] t) = "S:" ++ show t
-  show (TScheme tvs t) = "S" ++ show (sort tvs) ++ "." ++ show t
+instance PrettyPrint TScheme where
+  prettyPrint (TScheme [] t) = "S:" ++ prettyPrint t
+  prettyPrint (TScheme tvs t) = "S" ++ intercalate "." (map prettyPrint (sort tvs)) ++ "." ++ prettyPrint t
 
 -------------------------------------------------------------------------------- TypeEnv
 type Typing = (Var, TScheme)
 
 newtype Tagged a = Tagged { unWrap :: a }
+  deriving (Eq, Ord, Show)
+
 instance Functor Tagged where
   fmap f = Tagged . f . unWrap
 
 type TypeEnv = Tagged [Typing]
 
-instance Show TypeEnv where
-  show (unEnv -> env)
+instance PrettyPrint TypeEnv where
+  prettyPrint (unEnv -> env)
     | null env = "EmptyEnviroment"
     | otherwise = "E{" ++ intercalate ", " (map f (sort env)) ++ "}"
-    where f (v, TScheme [] t) = show v ++ " :: " ++ show t
-          f (v, s) = show v ++ " :: " ++ show s
+    where f (v, TScheme [] t) = prettyPrint v ++ " :: " ++ prettyPrint t
+          f (v, s) = prettyPrint v ++ " :: " ++ prettyPrint s
 
 makeEnv :: [Typing] -> TypeEnv
 makeEnv = Tagged
@@ -169,6 +171,14 @@ data TypeError
   | UnboundVariable Expr String
   | NotImplemented Expr
   deriving (Eq, Show)
+
+instance PrettyPrint TypeError where
+  prettyPrint (UnificationFail e t1 t2) =
+    "The expression `" ++ prettyPrint e ++ " :: " ++ prettyPrint t1 ++ "` can`t unify with `" ++ prettyPrint t2 ++ "`."
+  prettyPrint (InfiniteType e v t) =
+    "The expression `" ++ prettyPrint e ++ " :: " ++ prettyPrint v ++ "` has an infinite type `" ++ prettyPrint t ++ "`."
+  prettyPrint (UnboundVariable e v) =
+    "The expression `" ++ prettyPrint e ++ "` contains an unbound variable `" ++ show v ++ "`."
 
 -- | 型を一致させる型代入を求める
 -- なければ例外を起こす

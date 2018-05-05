@@ -9,14 +9,15 @@ import qualified Data.Text as T
 import GHC.TypeLits
 import Network.Discord
 
-import AST
-import Parser
-import Typing
+  -- import AST
+-- import Parser
+-- import Typing
+import Lib
 import DiscordSecret (token)
 
 instance DiscordAuth IO where
   auth    = return $ Bot token
-  version = return "0.7.0"
+  version = return "0.7.1"
   runIO   = id
 
 data MnemonicHandler
@@ -51,17 +52,3 @@ instance EventHandler TypeCheckApp IO
 
 main :: IO ()
 main = runBot (Proxy :: Proxy (IO TypeCheckApp))
-
-parsing :: String -> String
-parsing str =
-  case parseHaskell str of
-    Left err  -> err
-    Right exp -> show exp
-
-typing :: String -> String
-typing str =
-  case parseHaskell str of
-    Left err  -> err
-    Right exp -> case inferExpr exp of
-                   Right (t, e)  -> str ++ " :: " ++ show t ++ " -- " ++ show e
-                   Left e        -> str ++ " => Error: " ++ show e ++ "\nAST:" ++ show exp

@@ -1,4 +1,4 @@
-discord/DiscordSecret.hs
+app/DiscordSecret.hs
 PL-typechecker.cabal
 dist
 dist-*

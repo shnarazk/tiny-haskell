@@ -1,9 +1,11 @@
 module AST
-  ( Expr(..)
+  (
+    Expr(..)
   , Name
   , Lit(..)
   , Var(..)
   , Binop(..)
+  -- * For debug
   , PrettyPrint(..)
   ) where
 
@@ -13,8 +15,10 @@ import Text.Parsec
 import qualified Text.Parsec.Token as P
 import Text.Parsec.Language (haskellDef)
 
--------------------------------------------------------------------------------- Expression
+class PrettyPrint s where
+  prettyPrint :: s -> String
 
+-------------------------------------------------------------------------------- Expression
 type Name = String
 
 data Expr
@@ -29,9 +33,6 @@ data Expr
   | Let Var Expr Expr
   | NullExpr
   deriving (Eq, Ord, Show)
-
-class PrettyPrint s where
-  prettyPrint :: s -> String
 
 instance PrettyPrint Expr where
   prettyPrint (Ref v) = prettyPrint v
