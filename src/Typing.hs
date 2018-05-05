@@ -1,40 +1,39 @@
 {-# LANGUAGE
-    DeriveFunctor
-  , GeneralizedNewtypeDeriving
-  , MultiWayIf
+    FlexibleInstances
   , PatternSynonyms
   , TupleSections
+  , TypeSynonymInstances
   #-}
 -- http://dev.stephendiehl.com/fun/006_hindley_milner.html
 -- https://github.com/sdiehl/write-you-a-haskell/blob/master/chapter7/poly/src/Infer.hs
 
 module Typing
-  ( TypeError(..)
-  , inferExpr
-    -- * Testing
+  ( -- * Type System
+    Type(.., TBool, TInt, TChar, TString, TUnit)
   , TVar(..)
-  , Type(.., TBool, TInt, TChar, TString, TUnit)
-  , VarMap(..)
+    -- * Type Inference
+  , TypeError(..)
+  , inferExpr
+    -- * Type Environment
   , TypeEnv
   , emptyEnv
   , haskellEnv
+  , TScheme(..)
+    -- * Debugging stuff
   , subst
   , shadow
-  , TScheme(..)
   , schemeOf
   ) where
 
-import Control.Monad
 import Control.Monad.Identity
 import Control.Monad.Except
 import Control.Monad.State
-
 import Data.List
-import Data.Maybe
-import System.IO.Unsafe (unsafePerformIO)
 import AST
 
 -------------------------------------------------------------------------------- Type system
+class HasFreeVars s where
+  freevars :: s -> [TVar]
 
 newtype TVar = TV Int
   deriving (Eq, Ord)
@@ -57,6 +56,13 @@ instance Show Type where
   show (TTpl l) = "(" ++ intercalate ", " (map show l) ++ ")"
   show (TArr l) = "(" ++ intercalate " -> " (map show l) ++ ")"
 
+instance HasFreeVars Type where
+  freevars (TCon _)  = []
+  freevars (TVar x)  = [x]
+  freevars (TLst t) = freevars t
+  freevars (TTpl l) = nub $ concatMap freevars l
+  freevars (TArr l)  =  nub $ concatMap freevars l
+
 pattern TInt :: Type
 pattern TInt = TCon "Int"
 pattern TBool :: Type
@@ -68,6 +74,13 @@ pattern TString = TLst TChar
 pattern TUnit :: Type
 pattern TUnit = TCon "()"
 
+tVarsIn :: Type -> [TVar]
+tVarsIn (TCon _) = []
+tVarsIn (TVar v) = [v]
+tVarsIn (TLst t) = tVarsIn t
+tVarsIn (TTpl l) = nub $ concatMap tVarsIn l
+tVarsIn (TArr l) = nub $ concatMap tVarsIn l
+
 -- x         => (TV x) : TScheme [TV 1] (TV 1)
 -- f x = x   => (TV f) : TScheme [TV 1] (TArr [(TV 1), (TV 1)])
 -- f x y = y => (TV f) : TScheme [TV 1, TV 2] (TArr [(TV 1), (TV 1), (TV 1)])
@@ -77,39 +90,44 @@ data TScheme =
           }
   deriving (Eq, Ord)
 
+instance HasFreeVars TScheme where
+  freevars (TScheme tl t) = freevars t \\ tl
+
 instance Show TScheme where
   show (TScheme [] t) = "S:" ++ show t
   show (TScheme tvs t) = "S" ++ show (sort tvs) ++ "." ++ show t
 
-type Typing = (Var, TScheme)
-type TSubst = (TVar, Type)      -- 型代入
-
 -------------------------------------------------------------------------------- TypeEnv
-newtype VarMap = VarMap { unEnv :: [Typing] }
-  deriving (Eq, Ord)
+type Typing = (Var, TScheme)
 
-instance Show VarMap where
-  show (VarMap l) = "E{" ++ intercalate ", " (map f (sort l)) ++ "}"
+newtype Tagged a = Tagged { unWrap :: a }
+instance Functor Tagged where
+  fmap f = Tagged . f . unWrap
+
+type TypeEnv = Tagged [Typing]
+
+instance Show TypeEnv where
+  show env = "E{" ++ intercalate ", " (map f (sort (unEnv env))) ++ "}"
     where f (v, TScheme [] t) = show v ++ " :: " ++ show t
           f (v, s) = show v ++ " :: " ++ show s
 
-type TypeEnv = Maybe VarMap
-
-within :: ([Typing] -> [Typing]) -> VarMap -> VarMap
-within f (VarMap m) = VarMap $ f m
-
-schemeOf :: TypeEnv -> Var -> Maybe TScheme
-schemeOf Nothing _ = Nothing
-schemeOf (Just e) v = snd <$> find ((v ==) . fst) (unEnv e)
-
-extend :: TypeEnv -> Typing -> TypeEnv
-extend e (x, s) = within ((x, s) :) <$> e
-
-shadow :: TypeEnv -> TypeEnv -> TypeEnv
-shadow (Just to) from = within (\\ unEnv to) <$> from
+makeEnv :: [Typing] -> TypeEnv
+makeEnv = Tagged
 
 emptyEnv :: TypeEnv
-emptyEnv = Just $ VarMap []
+emptyEnv = makeEnv []
+
+unEnv :: TypeEnv -> [Typing]
+unEnv = unWrap
+
+schemeOf :: TypeEnv -> Var -> Maybe TScheme
+schemeOf e v = snd <$> find ((v ==) . fst) (unEnv e)
+
+extend :: TypeEnv -> Typing -> TypeEnv
+extend e (x, s) = fmap ((x, s) :) e
+
+shadow :: TypeEnv -> TypeEnv -> TypeEnv
+shadow to from = fmap (\\ unEnv to) from
 
 haskellEnv :: TypeEnv
 haskellEnv = foldl extend emptyEnv predefined
@@ -121,28 +139,18 @@ haskellEnv = foldl extend emptyEnv predefined
                  , def "not" [TBool, TBool]
                  ]
 
-class HasFreeVars s where
-  freevars :: s -> [TVar]
-
-instance HasFreeVars Type where
-  freevars (TCon _)  = []
-  freevars (TVar x)  = [x]
-  freevars (TLst t) = freevars t
-  freevars (TTpl l) = nub $ concatMap freevars l
-  freevars (TArr l)  =  nub $ concatMap freevars l
-
-instance HasFreeVars TScheme where
-  freevars (TScheme tl t) = freevars t \\ tl
-
-instance HasFreeVars VarMap where
+instance HasFreeVars TypeEnv where
   freevars e = nub $ concatMap (freevars .snd) (unEnv e)
+
+-------------------------------------------------------------------------------- Substitution
+type TSubst = (TVar, Type)      -- 型代入
 
 -- | 型変数を型で置き換える型代入
 subst :: TypeEnv -> [TSubst] -> TypeEnv
 subst e l = foldl subst1 e l
 
 subst1 :: TypeEnv -> TSubst -> TypeEnv
-subst1 e (tv, ty) = within (map shaper) <$> e
+subst1 e (tv, ty) = fmap (map shaper) e
   where
     shaper (v, TScheme l t) = (v, TScheme (delete tv l) (lookdown t))
     lookdown :: Type -> Type
@@ -159,75 +167,18 @@ data TypeError
   | NotImplemented Expr
   deriving (Eq, Show)
 
-type InferResult = Either TypeError (Type, TypeEnv)
-
-type Infer a = StateT Int (ExceptT TypeError Identity) a
-
-inferExpr :: Expr -> InferResult
-inferExpr e = runIdentity $ runExceptT (evalStateT (infer e haskellEnv) 0)
-
-newTypeVar :: Infer TVar
-newTypeVar = do { i <- (1 +) <$> get; put i; return $ TV i }
-
--- | 型環境e下における与えられた式の型を返す
--- | 型環境は部分式の評価において更新されるため、更新された型環境も返す必要がある。
-infer :: Expr -> TypeEnv -> Infer (Type, TypeEnv)
-infer (Lit (LInt _))    e = return (TInt, e)
-infer (Lit (LBool _))   e = return (TBool, e)
-infer (Lit (LString _)) e = return (TString, e)
-infer (Ref v@(Var n))   e = case find ((v ==) . fst) . unEnv =<< e of
-                              Just (_, TScheme _ t) -> return (t, e)
-                              Nothing -> do t <- newTypeVar  -- t :: TVar
-                                            let s = TScheme [t] (TVar t)
-                                            return (TVar t, extend e (Var n, s))
-infer (Pair ls) e = do
-  let loop [] ts e' = return (TTpl (reverse ts), e')
-      loop (x:xs) ts e0 = do { (t, e1) <- infer x e0; loop xs (t:ts) e1 }
-  loop ls [] e
-infer xp@(List ls) e = do
-  let loop [] e' t = return (TLst t, e')
-      loop (x:xs) e0 t = do { (t1, e2) <- infer x =<< uncurry (unify xp t) =<< infer x e0; loop xs e2 t1 }
-  loop ls e . TVar =<< newTypeVar
-infer (App xs) e0 = do
-  let loop []    e ts = return (reverse ts, e)
-      loop (a:l) e ts = do { (t', e') <- infer a e; loop l e' (t' : ts) }
-  (ts, e1) <- loop xs e0 []
-  r2 <- TArr . (\v -> tail ts ++ [v]) . TVar <$> newTypeVar
-  (TArr l, e2) <- infer (head xs) =<< unify (head xs) (head ts) r2 e1
-  case drop (length xs - 1) l of
-    []  -> throwError $ UnificationFail (App xs) TUnit (TArr l)
-    [e] -> return (e, e2)
-    l   -> return  (TArr l, e2)
-infer (Paren x) e = infer x e
-infer xp@(Op op x y) e0
-  | elem op [Add, Sub, Mul]  = do (tx, e1) <- infer x e0
-                                  (ty, e2) <- infer y =<< unify x tx TInt e1
-                                  (TInt,) <$> unify y ty TInt e2
-  | elem op [Eql] = do (tx, e1) <- infer x e0
-                       (ty, e2) <- infer y e1
-                       (TBool,) <$> unify xp tx ty e2
-  | otherwise = throwError $ NotImplemented xp
-infer (Let v x1 x2) e0 = do
-  (t1, e1) <- infer x1 e0                    -- x1の型からvはt1型である（自由変数が消えるようなunifyは不可）
-  (_ , e2) <- infer x2 e1                    -- 最初から自由変数がなければ消えたりはしない。
-  let (Just (TScheme _ tv)) = schemeOf e2 v  -- x2での型推論よりvの型はtvでなければならない
-  let (Just overlap) = not . null . intersect (tVarsIn t1) . freevars <$> e2   -- x1より束縛変数を求める
-  if overlap
-    then throwError $ UnificationFail (Ref v) t1 tv
-    else do e3 <- unify (Ref v) t1 tv e2
-            (tl, e4) <- infer x2 e3
-            return (tl, within (filter ((v /=) . fst)) <$> e4)
-infer x _ = throwError $ NotImplemented x
-
-tVarsIn :: Type -> [TVar]
-tVarsIn (TCon _) = []
-tVarsIn (TVar v) = [v]
-tVarsIn (TLst t) = tVarsIn t
-tVarsIn (TTpl l) = nub $ concatMap tVarsIn l
-tVarsIn (TArr l) = nub $ concatMap tVarsIn l
+-- | 型を一致させる型代入を求める
+-- なければ例外を起こす
+unify :: Expr -> Type -> Type -> TypeEnv -> Infer TypeEnv
+unify x t t' e
+  | TVar v <- t, occurrenceCheck v t' = throwError (InfiniteType x v t')
+  | otherwise =
+    case unifier t t' of
+      Just u -> return $ subst e u
+      Nothing -> throwError (UnificationFail x t t')
 
 unifier :: Type -> Type -> Maybe [TSubst]
--- Constant
+-- Type Constant
 unifier t1@(TCon _) t2@(TCon _)
   | t1 == t2 = Just []
   | otherwise = Nothing
@@ -250,16 +201,68 @@ unifier (TArr l1) (TArr l2)
   | otherwise = Nothing
 unifier _ _ = Nothing
 
-unify :: Expr -> Type -> Type -> TypeEnv -> Infer TypeEnv
-unify x t t' e
-  | TVar v <- t, occurrenceCheck v t' = throwError (InfiniteType x v t')
-  | otherwise =
-    case unifier t t' of
-      Just u -> return $ subst e u
-      Nothing -> throwError (UnificationFail x t t')
-
 occurrenceCheck :: TVar -> Type -> Bool
 occurrenceCheck t1 t2@(TLst _) = elem t1 (freevars t2)
 occurrenceCheck t1 t2@(TTpl _) = elem t1 (freevars t2)
 occurrenceCheck t1 t2@(TArr _) = elem t1 (freevars t2)
 occurrenceCheck _ _ = False
+
+-------------------------------------------------------------------------------- Inference
+type InferResult = Either TypeError (Type, TypeEnv)
+type Infer a = StateT Int (ExceptT TypeError Identity) a
+
+inferExpr :: Expr -> InferResult
+inferExpr e = runIdentity $ runExceptT (evalStateT (infer e haskellEnv) 0)
+
+newTypeVar :: Infer TVar
+newTypeVar = do { i <- (1 +) <$> get; put i; return $ TV i }
+
+-- | 型環境e下における与えられた式の型を返す
+-- | 型環境は部分式の評価において更新されるため、更新された型環境も返す必要がある。
+-- | この関数は失敗しない。例外を返すのはunifyのみ
+infer :: Expr -> TypeEnv -> Infer (Type, TypeEnv)
+infer (Lit (LInt _))    e = return (TInt, e)
+infer (Lit (LBool _))   e = return (TBool, e)
+infer (Lit (LString _)) e = return (TString, e)
+infer (Ref v@(Var n))   e = case find ((v ==) . fst) (unEnv e) of
+                              Just (_, TScheme _ t) -> return (t, e)
+                              Nothing -> do t <- newTypeVar  -- t :: TVar
+                                            let s = TScheme [t] (TVar t)
+                                            return (TVar t, extend e (Var n, s))
+infer (Pair ls) e = do
+  let loop [] ts e' = return (TTpl (reverse ts), e')
+      loop (x:xs) ts e0 = do { (t, e1) <- infer x e0; loop xs (t:ts) e1 }
+  loop ls [] e
+infer xp@(List ls) e = do
+  let loop [] e' t = return (TLst t, e')
+      loop (x:xs) e0 t = do { (t1, e2) <- infer x =<< uncurry (unify xp t) =<< infer x e0; loop xs e2 t1 }
+  loop ls e . TVar =<< newTypeVar
+infer (App xs) e0 = do
+  let loop []    e ts = return (reverse ts, e)
+      loop (a:l) e ts = do { (t', e') <- infer a e; loop l e' (t' : ts) }
+  (ts, e1) <- loop xs e0 []
+  r2 <- TArr . (\v -> tail ts ++ [v]) . TVar <$> newTypeVar
+  (TArr l, e2) <- infer (head xs) =<< unify (head xs) (head ts) r2 e1
+  case drop (length xs - 1) l of
+    []  -> throwError $ UnificationFail (App xs) TUnit (TArr l)
+    [e] -> return (e, e2)
+    l'  -> return  (TArr l', e2)
+infer (Paren x) e = infer x e
+infer xp@(Op op x y) e0
+  | elem op [Add, Sub, Mul]  = do (tx, e1) <- infer x e0
+                                  (ty, e2) <- infer y =<< unify x tx TInt e1
+                                  (TInt,) <$> unify y ty TInt e2
+  | elem op [Eql] = do (tx, e1) <- infer x e0
+                       (ty, e2) <- infer y e1
+                       (TBool,) <$> unify xp tx ty e2
+  | otherwise = throwError $ NotImplemented xp
+infer (Let v x1 x2) e0 = do
+  (t1, e1) <- infer x1 e0                         -- x1の型からvはt1型である（自由変数が消えるようなunifyは不可）
+  (_ , e2) <- infer x2 e1                         -- 最初から自由変数がなければ消えたりはしない。
+  let (Just (TScheme _ tv)) = schemeOf e2 v       -- x2での型推論よりvの型はtvでなければならない
+  if null . intersect (tVarsIn t1) $ freevars e2  -- スキーマ変数が自由変数に含まれない
+    then do e3 <- unify (Ref v) t1 tv e2
+            (tl, e4) <- infer x2 e3
+            return (tl, fmap (filter ((v /=) . fst)) e4)
+    else throwError $ UnificationFail (Ref v) t1 tv
+infer x _ = throwError $ NotImplemented x
