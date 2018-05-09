@@ -276,11 +276,11 @@ infer xp@(Op op x y) e0
 infer (Let v x1 x2) e0 = do
   t <- newTypeVar  -- t :: TVar
   let s = TScheme [t] (TVar t)
-  (t1, e1) <- infer x1 (extend e0 (v,s))          -- x1からvはt1型である（自由変数が消えるunifyは不可）
-  (_ , e2) <- infer x2 e1                         -- 最初から自由変数がなければ消えたりはしない。
+  (t1, e1) <- infer x1 e0                         -- x1からvはt1型である（自由変数が消えるunifyは不可）
+  (_ , e2) <- infer x2 (extend e1 (v,s))          -- 最初から自由変数がなければ消えたりはしない。
   let (Just (TScheme _ tv)) = schemeOf e2 v       -- x2での型推論よりvの型はtvでなければならない
   if null . intersect (tVarsIn t1) $ freevars e2  -- スキーマ変数が自由変数に含まれない
-    then do e3 <- unify (Ref v) t1 tv e2
+    then do e3 <- unify (Ref v) t1 tv e2          -- vに関する型t1, tvをunify
             (tl, e4) <- infer x2 e3
             return (tl, fmap (filter ((v /=) . fst)) e4)
     else throwError $ UnificationFail (Ref v) t1 tv
