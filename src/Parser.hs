@@ -10,11 +10,12 @@ import Text.Parsec.Language (haskellDef)
 import AST
 
 parseHaskell :: String -> Either String Expr
-parseHaskell str = case parse hLine "ERROR" str of
-                     Left err -> let l = lines str !! ((max (length (lines str)) (sourceLine (errorPos err) - 1)) -1)
-                                     i = replicate (sourceColumn (errorPos err) -1) ' ' ++ "^\n"
-                                 in Left $ l ++ "\n" ++ i ++ show err
-                     Right x  -> Right x
+parseHaskell str =
+  case parse hLine "ERROR" str of
+    Left err -> let l = lines str !! (max (length (lines str)) (sourceLine (errorPos err) - 1) - 1)
+                    i = replicate (sourceColumn (errorPos err) -1) ' ' ++ "^\n"
+                in Left $ l ++ "\n" ++ i ++ show err
+    Right x  -> Right x
 
 lexer       = P.makeTokenParser haskellDef
 parens      = P.parens lexer
@@ -34,14 +35,9 @@ hTerm  = hAppl   `chainl1` mulop
 hAppl  = hFactor `chainl1` brank
 _hAppl  = do
   l <- many1 (hLet <|> hVar <|> hLitInt <|> hParens <|> hList)
-  -- lookAhead (symbol "+")
-  -- lookAhead (operator <|> (eof $> "") <|> symbol "+")
   case l of
     [e] -> return e
     l   -> return $ App l
-
---  where f [e] = e
---        f l   = App l
 
 eqlop :: Parsec String () (Expr -> Expr -> Expr)
 eqlop = symbol "==" $> Op Eql
@@ -57,7 +53,6 @@ brank = notFollowedBy operator $> f
   where f (App l) r = App $ l ++ [r]
         f l r       = App $ [l, r]
 
--- hFactor = hVar <|> hLitInt
 hFactor = hList <|> hParens <|> hLet <|> hVar <|> hLitInt
 
 hList = brackets $ List <$> sepBy hExpr (symbol ",")
@@ -67,10 +62,8 @@ hParens = parens $ f <$> sepBy1 hExpr (symbol ",")
 
 hLet = do
   symbol "let"
-  e0 <- hVar
-  symbol "="
-  e1 <- hExpr
-  symbol "in"
+  e0 <- hVar <* symbol "="
+  e1 <- hExpr <* symbol "in"
   e2 <- hExpr
   case e0 of
     Ref v -> return $ Let v e1 e2

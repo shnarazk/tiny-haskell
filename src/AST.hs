@@ -53,10 +53,10 @@ data Lit
   deriving (Eq, Ord, Show)
 
 instance PrettyPrint Lit where
-  prettyPrint (LInt n) = show n
-  prettyPrint (LBool b) = show b
+  prettyPrint (LInt n)    = show n
+  prettyPrint (LBool b)   = show b
   prettyPrint (LString s) = s
-  prettyPrint (LFunc f) = f
+  prettyPrint (LFunc f)   = f
 
 data Var = Var Name
   deriving (Eq, Ord, Show)

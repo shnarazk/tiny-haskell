@@ -1,5 +1,5 @@
 name:                PL-typechecker
-version:             0.7.2.0
+version:             0.8.0.0
 github:              "githubuser/PL-typechecker"
 license:             BSD3
 author:              "Shuji Narazaki"

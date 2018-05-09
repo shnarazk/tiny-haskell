@@ -64,16 +64,16 @@ instance HasFreeVars Type where
   freevars (TTpl l) = nub $ concatMap freevars l
   freevars (TArr l)  =  nub $ concatMap freevars l
 
-pattern TInt :: Type
-pattern TInt = TCon "Int"
-pattern TBool :: Type
-pattern TBool = TCon "Bool"
-pattern TChar :: Type
-pattern TChar = TCon "Char"
+pattern TInt    :: Type
+pattern TInt    = TCon "Int"
+pattern TBool   :: Type
+pattern TBool   = TCon "Bool"
+pattern TChar   :: Type
+pattern TChar   = TCon "Char"
 pattern TString :: Type
 pattern TString = TLst TChar
-pattern TUnit :: Type
-pattern TUnit = TCon "()"
+pattern TUnit   :: Type
+pattern TUnit   = TCon "()"
 
 tVarsIn :: Type -> [TVar]
 tVarsIn (TCon _) = []
@@ -96,7 +96,7 @@ instance HasFreeVars TScheme where
 
 instance PrettyPrint TScheme where
   prettyPrint (TScheme [] t) = "S:" ++ prettyPrint t
-  prettyPrint (TScheme tvs t) = "S" ++ intercalate "." (map prettyPrint (sort tvs)) ++ "." ++ prettyPrint t
+  prettyPrint (TScheme vs t) = "S" ++ intercalate "." (map prettyPrint (sort vs)) ++ "." ++ prettyPrint t
 
 -------------------------------------------------------------------------------- TypeEnv
 type Typing = (Var, TScheme)
@@ -111,7 +111,7 @@ type TypeEnv = Tagged [Typing]
 
 instance PrettyPrint TypeEnv where
   prettyPrint (unEnv -> env)
-    | null env = "EmptyEnviroment"
+    | null env  = "EmptyEnviroment"
     | otherwise = "E{" ++ intercalate ", " (map f (sort env)) ++ "}"
     where f (v, TScheme [] t) = prettyPrint v ++ " :: " ++ prettyPrint t
           f (v, s) = prettyPrint v ++ " :: " ++ prettyPrint s
@@ -161,9 +161,9 @@ subst1 e (tv, ty) = fmap (map shaper) e
     lookdown :: Type -> Type
     lookdown t'@(TCon _) = t'
     lookdown t'@(TVar tv') = if tv' == tv then ty else t'
-    lookdown (TLst t')    = TLst (lookdown t')
-    lookdown (TTpl l')    = TTpl (map lookdown l')
-    lookdown (TArr l')    = TArr (map lookdown l')
+    lookdown (TLst t')     = TLst (lookdown t')
+    lookdown (TTpl l')     = TTpl (map lookdown l')
+    lookdown (TArr l')     = TArr (map lookdown l')
 
 data TypeError
   = UnificationFail Expr Type Type
@@ -178,7 +178,7 @@ instance PrettyPrint TypeError where
   prettyPrint (InfiniteType e v t) =
     "The expression `" ++ prettyPrint e ++ " :: " ++ prettyPrint v ++ "` has an infinite type `" ++ prettyPrint t ++ "`."
   prettyPrint (UnboundVariable e v) =
-    "The expression `" ++ prettyPrint e ++ "` contains an unbound variable `" ++ show v ++ "`."
+    "The expression `" ++ prettyPrint e ++ "` contains an unbound variable `" ++ v ++ "`."
   prettyPrint (NotImplemented e) =
     "Sorry, we can't yet handle the expression `" ++ prettyPrint e ++ "`."
 
@@ -187,19 +187,20 @@ instance PrettyPrint TypeError where
 unify :: Expr -> Type -> Type -> TypeEnv -> Infer TypeEnv
 unify x t t' e
   | TVar v <- t, occurrenceCheck v t' = throwError (InfiniteType x v t')
-  | otherwise =
-    case unifier t t' of
-      Just u -> return $ subst e u
-      Nothing -> throwError (UnificationFail x t t')
+  | Just u <- unifier t t'            = return $ subst e u
+  | otherwise                         = throwError $ UnificationFail x t t'
+--    case unifier t t' of
+--      Just u -> return $ subst e u
+--      Nothing -> throwError (UnificationFail x t t')
 
 unifier :: Type -> Type -> Maybe [TSubst]
 -- Type Constant
 unifier t1@(TCon _) t2@(TCon _)
   | t1 == t2 = Just []
   | otherwise = Nothing
-unifier t@(TCon _) (TVar v) = Just [(v, t)]
+unifier t@(TCon _) (TVar v)   = Just [(v, t)]
 unifier (TCon _) _ = Nothing
-unifier t1 t2@(TCon _) = unifier t2 t1
+unifier t1 t2@(TCon _)        = unifier t2 t1
 -- Var
 unifier t1@(TVar _) (TVar t2) = Just [(t2, t1)]
 unifier (TVar t1) t2@(TLst _) = Just [(t1, t2)]
@@ -207,12 +208,12 @@ unifier (TVar t1) t2@(TTpl _) = Just [(t1, t2)]
 unifier (TVar t1) t2@(TArr _) = Just [(t1, t2)]
 unifier t1 t2@(TVar _) = unifier t2 t1
 -- Compound types
-unifier (TLst t1) (TLst t2) = unifier t1 t2
+unifier (TLst t1) (TLst t2)   = unifier t1 t2
 unifier (TTpl l1) (TTpl l2)
-  | length l1 == length l2 = mconcat $ zipWith unifier l1 l2
+  | length l1 == length l2    = mconcat $ zipWith unifier l1 l2
   | otherwise = Nothing
 unifier (TArr l1) (TArr l2)
-  | length l1 == length l2 = mconcat $ zipWith unifier l1 l2
+  | length l1 == length l2    = mconcat $ zipWith unifier l1 l2
   | otherwise = Nothing
 unifier _ _ = Nothing
 
@@ -220,7 +221,7 @@ occurrenceCheck :: TVar -> Type -> Bool
 occurrenceCheck t1 t2@(TLst _) = elem t1 (freevars t2)
 occurrenceCheck t1 t2@(TTpl _) = elem t1 (freevars t2)
 occurrenceCheck t1 t2@(TArr _) = elem t1 (freevars t2)
-occurrenceCheck _ _ = False
+occurrenceCheck _ _            = False
 
 -------------------------------------------------------------------------------- Inference
 type InferResult = Either TypeError (Type, TypeEnv)
@@ -241,9 +242,10 @@ infer (Lit (LBool _))   e = return (TBool, e)
 infer (Lit (LString _)) e = return (TString, e)
 infer (Ref v@(Var n))   e = case find ((v ==) . fst) (unEnv e) of
                               Just (_, TScheme _ t) -> return (t, e)
-                              Nothing -> do t <- newTypeVar  -- t :: TVar
-                                            let s = TScheme [t] (TVar t)
-                                            return (TVar t, extend e (Var n, s))
+                              Nothing -> throwError $ UnboundVariable (Ref v) n
+--                              Nothing -> do t <- newTypeVar  -- t :: TVar
+--                                            let s = TScheme [t] (TVar t)
+--                                            return (TVar t, extend e (Var n, s))
 infer (Pair ls) e = do
   let loop [] ts e' = return (TTpl (reverse ts), e')
       loop (x:xs) ts e0 = do { (t, e1) <- infer x e0; loop xs (t:ts) e1 }
@@ -272,7 +274,9 @@ infer xp@(Op op x y) e0
                        (TBool,) <$> unify xp tx ty e2
   | otherwise = throwError $ NotImplemented xp
 infer (Let v x1 x2) e0 = do
-  (t1, e1) <- infer x1 e0                         -- x1の型からvはt1型である（自由変数が消えるようなunifyは不可）
+  t <- newTypeVar  -- t :: TVar
+  let s = TScheme [t] (TVar t)
+  (t1, e1) <- infer x1 (extend e0 (v,s))          -- x1からvはt1型である（自由変数が消えるunifyは不可）
   (_ , e2) <- infer x2 e1                         -- 最初から自由変数がなければ消えたりはしない。
   let (Just (TScheme _ tv)) = schemeOf e2 v       -- x2での型推論よりvの型はtvでなければならない
   if null . intersect (tVarsIn t1) $ freevars e2  -- スキーマ変数が自由変数に含まれない
