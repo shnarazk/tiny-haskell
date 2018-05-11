@@ -17,7 +17,7 @@ import DiscordSecret (token)
 
 instance DiscordAuth IO where
   auth    = return $ Bot token
-  version = return "0.8.1"
+  version = return "0.9.0"
   runIO   = id
 
 data MnemonicHandler
