@@ -227,9 +227,6 @@ occurrenceCheck _ _            = False
 type InferResult = Either TypeError (Type, TypeEnv)
 type Infer a = StateT Int (ExceptT TypeError Identity) a
 
-inferExpr :: Expr -> InferResult
-inferExpr e = runIdentity $ runExceptT (evalStateT (infer e haskellEnv) 0)
-
 newTypeVar :: Infer TVar
 newTypeVar = do { i <- (1 +) <$> get; put i; return $ TV i }
 
@@ -285,3 +282,7 @@ infer (Let v x1 x2) e0 = do
             return (tl, fmap (filter ((v /=) . fst)) e4)
     else throwError $ UnificationFail (Ref v) t1 tv
 infer x _ = throwError $ NotImplemented x
+
+-------------------------------------------------------------------------------- interface
+inferExpr :: Expr -> InferResult
+inferExpr e = runIdentity $ runExceptT (evalStateT (infer e haskellEnv) 0)

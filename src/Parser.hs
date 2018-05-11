@@ -33,11 +33,6 @@ hExpr  = hExpr'  `chainl1` eqlop
 hExpr' = hTerm   `chainl1` addop
 hTerm  = hAppl   `chainl1` mulop
 hAppl  = hFactor `chainl1` brank
-_hAppl  = do
-  l <- many1 (hLet <|> hVar <|> hLitInt <|> hParens <|> hList)
-  case l of
-    [e] -> return e
-    l   -> return $ App l
 
 eqlop :: Parsec String () (Expr -> Expr -> Expr)
 eqlop = symbol "==" $> Op Eql
@@ -75,7 +70,3 @@ hVar = f <$> identifier
         f str     = Ref (Var str)
 
 hLitInt = Lit . LInt . fromInteger <$> integer
-
-hApplication = do
-  f <- hExpr
-  App . (f :) <$> many1 hExpr
