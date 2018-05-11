@@ -30,6 +30,7 @@ import Control.Monad.Identity
 import Control.Monad.Except
 import Control.Monad.State
 import Data.List
+import Data.Maybe
 import AST
 
 -------------------------------------------------------------------------------- Type system
@@ -110,8 +111,8 @@ instance Functor Tagged where
 type TypeEnv = Tagged [Typing]
 
 instance PrettyPrint TypeEnv where
-  prettyPrint (unEnv -> env)
-    | null env  = "EmptyEnviroment"
+  prettyPrint (reorderTypeVars -> unEnv -> env)
+    | null env  = "empty environment"
     | otherwise = "E{" ++ intercalate ", " (map f (sort env)) ++ "}"
     where f (v, TScheme [] t) = prettyPrint v ++ " :: " ++ prettyPrint t
           f (v, s) = prettyPrint v ++ " :: " ++ prettyPrint s
@@ -274,15 +275,41 @@ infer (Let v x1 x2) e0 = do
   t <- newTypeVar  -- t :: TVar
   let s = TScheme [t] (TVar t)
   (t1, e1) <- infer x1 e0                         -- x1からvはt1型である（自由変数が消えるunifyは不可）
-  (_ , e2) <- infer x2 (extend e1 (v,s))          -- 最初から自由変数がなければ消えたりはしない。
+  (_ , e2) <- infer x2 (extend e1 (v,s))          -- 最初から自由変数がなければ消えたりはしない
   let (Just (TScheme _ tv)) = schemeOf e2 v       -- x2での型推論よりvの型はtvでなければならない
   if null . intersect (tVarsIn t1) $ freevars e2  -- スキーマ変数が自由変数に含まれない
     then do e3 <- unify (Ref v) t1 tv e2          -- vに関する型t1, tvをunify
             (tl, e4) <- infer x2 e3
             return (tl, fmap (filter ((v /=) . fst)) e4)
     else throwError $ UnificationFail (Ref v) t1 tv
+--
+infer (Decl v args x) e0 = do
+  tvs <- mapM (const newTypeVar) (v:args)         -- = arg types : return type
+  let argSchemes = map (\t -> TScheme [] (TVar t)) (init tvs)
+  let vScheme = TScheme tvs (TArr (map TVar tvs))
+  let e1 = foldl extend e0 $ zip (v:args) (vScheme:argSchemes)
+  (t, e2) <- infer x e1
+  e3 <- unify (Ref v) (TVar (last tvs)) t e2      -- eとvの返値型は同じ
+  let e4 = fmap (filter ((`notElem` args) . fst)) e3
+  return (derived . fromJust $ schemeOf e4 v, e4)
 infer x _ = throwError $ NotImplemented x
 
 -------------------------------------------------------------------------------- interface
 inferExpr :: Expr -> InferResult
 inferExpr e = runIdentity $ runExceptT (evalStateT (infer e haskellEnv) 0)
+
+reorderTypeVars :: TypeEnv -> TypeEnv
+reorderTypeVars (unEnv -> l) = makeEnv $ map (\(v, s) -> (v, replace s)) l
+  where ordering = zip (nub . sort $ concatMap (tVarsIn . derived . snd) l) (map TV [1..])
+        to :: TVar -> TVar
+        to v
+          | Just (_, v') <- find ((v ==) . fst) ordering = v'
+          | otherwise = v
+        rep :: Type -> Type
+        rep t@(TCon _) = t
+        rep (TVar v)   = TVar (to v)
+        rep (TLst t)   = TLst (rep t)
+        rep (TTpl l)   = TTpl (map rep l)
+        rep (TArr l)   = TArr (map rep l)
+        replace :: TScheme -> TScheme
+        replace (TScheme fvs typ) = TScheme (map to fvs) (rep typ)

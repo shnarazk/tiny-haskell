@@ -31,6 +31,7 @@ data Expr
   | Paren Expr
   | Op Binop Expr Expr
   | Let Var Expr Expr
+  | Decl Var [Var] Expr
   | NullExpr
   deriving (Eq, Ord, Show)
 
@@ -43,6 +44,7 @@ instance PrettyPrint Expr where
   prettyPrint (Paren e) = "(" ++ prettyPrint e ++ ")"
   prettyPrint (Op x e1 e2) = " (" ++ prettyPrint e1 ++ " " ++ prettyPrint x ++ " " ++ prettyPrint e2 ++ ") "
   prettyPrint (Let v e1 e2) = "let " ++ prettyPrint v ++ " = " ++ prettyPrint e1 ++ " in " ++ prettyPrint e2
+  prettyPrint (Decl l as e) = intercalate " " (map prettyPrint (l : as)) ++ " = " ++ prettyPrint e
   prettyPrint NullExpr = "_|_"
 
 data Lit
@@ -73,7 +75,7 @@ instance PrettyPrint Binop where
   prettyPrint Mul = "*"
   prettyPrint Eql = "=="
 
-data Program = Program [Decl] Expr
-  deriving Eq
+-- data Program = Program [Decl] Expr
+--   deriving Eq
 
-type Decl = (String, Expr)
+-- type Decl = (String, Expr)
