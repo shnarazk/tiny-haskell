@@ -33,11 +33,6 @@ hExpr  = hExpr'  `chainl1` eqlop
 hExpr' = hTerm   `chainl1` addop
 hTerm  = hAppl   `chainl1` mulop
 hAppl  = hFactor `chainl1` brank
-_hAppl  = do
-  l <- many1 (hLet <|> hVar <|> hLitInt <|> hParens <|> hList)
-  case l of
-    [e] -> return e
-    l   -> return $ App l
 
 eqlop :: Parsec String () (Expr -> Expr -> Expr)
 eqlop = symbol "==" $> Op Eql
@@ -53,21 +48,9 @@ brank = notFollowedBy operator $> f
   where f (App l) r = App $ l ++ [r]
         f l r       = App $ [l, r]
 
-hFactor = hList <|> hParens <|> hLet <|> hVar <|> hLitInt
+hFactor = hParens <|> hVar <|> hLitInt
 
-hList = brackets $ List <$> sepBy hExpr (symbol ",")
-
-hParens = parens $ f <$> sepBy1 hExpr (symbol ",")
-  where f l = if length l == 1 then Paren (head l) else Pair l
-
-hLet = do
-  symbol "let"
-  e0 <- hVar <* symbol "="
-  e1 <- hExpr <* symbol "in"
-  e2 <- hExpr
-  case e0 of
-    Ref v -> return $ Let v e1 e2
-    _     -> fail "invalid var to assign"
+hParens = Paren <$> parens hExpr
 
 hVar = f <$> identifier
   where f "False" = Lit (LBool False)
