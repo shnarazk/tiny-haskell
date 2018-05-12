@@ -41,7 +41,8 @@ newtype TVar = TV Int
   deriving (Eq, Ord, Show)
 
 instance PrettyPrint TVar where
-  prettyPrint (TV name) = "t" ++ show name
+  precedenceOf _ = 0
+  pp _ (TV name) = "t" ++ show name
 
 data Type
  = TCon Name                    -- Constant
@@ -52,11 +53,16 @@ data Type
  deriving (Eq, Ord, Show)
 
 instance PrettyPrint Type where
-  prettyPrint (TCon n) = n
-  prettyPrint (TVar t) = prettyPrint t
-  prettyPrint (TLst l) = "[" ++ prettyPrint l ++ "]"
-  prettyPrint (TTpl l) = "(" ++ intercalate ", " (map prettyPrint l) ++ ")"
-  prettyPrint (TArr l) = "(" ++ intercalate " -> " (map prettyPrint l) ++ ")"
+  precedenceOf (TCon c) = maxBound
+  precedenceOf (TVar t) = maxBound
+  precedenceOf (TLst l) = maxBound
+  precedenceOf (TTpl l) = maxBound
+  precedenceOf (TArr l) = 0
+  pp n (TCon c) = c
+  pp n (TVar t) = pp n t
+  pp _ (TLst l) = "[" ++ pp 0 l ++ "]"
+  pp _ (TTpl l) = "(" ++ intercalate ", " (map (pp 0) l) ++ ")"
+  pp n (TArr l) = intercalate " -> " (map (enclose (n + 1)) l)
 
 instance HasFreeVars Type where
   freevars (TCon _)  = []
@@ -96,8 +102,9 @@ instance HasFreeVars TScheme where
   freevars (TScheme tl t) = freevars t \\ tl
 
 instance PrettyPrint TScheme where
-  prettyPrint (TScheme [] t) = "S:" ++ prettyPrint t
-  prettyPrint (TScheme vs t) = "S" ++ intercalate "." (map prettyPrint (sort vs)) ++ "." ++ prettyPrint t
+  precedenceOf _ = 0
+  pp _ (TScheme [] t) = "S:" ++ pp 0 t
+  pp _ (TScheme vs t) = "S" ++ intercalate "." (map (pp 0) (sort vs)) ++ "." ++ pp 0 t
 
 -------------------------------------------------------------------------------- TypeEnv
 type Typing = (Var, TScheme)
@@ -111,11 +118,12 @@ instance Functor Tagged where
 type TypeEnv = Tagged [Typing]
 
 instance PrettyPrint TypeEnv where
-  prettyPrint (reorderTypeVars -> unEnv -> env)
+  precedenceOf _ = 0
+  pp _ (reorderTypeVars -> unEnv -> env)
     | null env  = "empty environment"
     | otherwise = "E{" ++ intercalate ", " (map f (sort env)) ++ "}"
-    where f (v, TScheme [] t) = prettyPrint v ++ " :: " ++ prettyPrint t
-          f (v, s) = prettyPrint v ++ " :: " ++ prettyPrint s
+    where f (v, TScheme [] t) = pp 0 v ++ " :: " ++ pp 0 t
+          f (v, s) = pp 0 v ++ " :: " ++ pp 0 s
 
 makeEnv :: [Typing] -> TypeEnv
 makeEnv = Tagged
@@ -174,14 +182,15 @@ data TypeError
   deriving (Eq, Show)
 
 instance PrettyPrint TypeError where
-  prettyPrint (UnificationFail e t1 t2) =
-    "The expression `" ++ prettyPrint e ++ " :: " ++ prettyPrint t1 ++ "` can`t unify with `" ++ prettyPrint t2 ++ "`."
-  prettyPrint (InfiniteType e v t) =
-    "The expression `" ++ prettyPrint e ++ " :: " ++ prettyPrint v ++ "` has an infinite type `" ++ prettyPrint t ++ "`."
-  prettyPrint (UnboundVariable e v) =
-    "The expression `" ++ prettyPrint e ++ "` contains an unbound variable `" ++ v ++ "`."
-  prettyPrint (NotImplemented e) =
-    "Sorry, we can't yet handle the expression `" ++ prettyPrint e ++ "`."
+  precedenceOf _ = 0
+  pp _ (UnificationFail e t1 t2) =
+    "The expression `" ++ pp 0 e ++ " :: " ++ pp 0 t1 ++ "` can`t unify with `" ++ pp 0 t2 ++ "`."
+  pp _ (InfiniteType e v t) =
+    "The expression `" ++ pp 0 e ++ " :: " ++ pp 0 v ++ "` has an infinite type `" ++ pp 0 t ++ "`."
+  pp _ (UnboundVariable e v) =
+    "The expression `" ++ pp 0 e ++ "` contains an unbound variable `" ++ v ++ "`."
+  pp _ (NotImplemented e) =
+    "Sorry, we can't yet handle the expression `" ++ pp 0 e ++ "`."
 
 -- | 型を一致させる型代入を求める
 -- なければ例外を起こす
